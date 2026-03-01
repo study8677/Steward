@@ -247,6 +247,47 @@ textarea.auto-resize { min-height: 48px; max-height: 200px; resize: none; overfl
 .status-msg { margin: 8px 0 0; font-size: 0.85rem; color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
+.brief-settings {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: var(--radius-sm);
+  background: #f9fbfa;
+}
+
+.brief-settings-row {
+  display: grid;
+  grid-template-columns: auto minmax(78px, 120px) auto minmax(88px, 140px) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.brief-settings-row label {
+  margin: 0;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.brief-settings-row select {
+  padding: 6px 8px;
+  font-size: 0.85rem;
+}
+
+.brief-settings-row .btn {
+  justify-self: start;
+}
+
+@media (max-width: 700px) {
+  .brief-settings-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .brief-settings-row .btn {
+    grid-column: span 2;
+    width: 100%;
+  }
+}
+
 /* Markdown Content */
 .markdown-body {
   font-family: var(--font-sans); font-size: 0.95rem; line-height: 1.6; color: var(--ink);

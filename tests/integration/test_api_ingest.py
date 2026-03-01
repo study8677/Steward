@@ -71,3 +71,29 @@ def test_dashboard_logs_endpoint(client: TestClient) -> None:
     assert response.status_code == 200
     items = response.json().get("items", [])
     assert isinstance(items, list)
+
+
+def test_brief_settings_roundtrip(client: TestClient) -> None:
+    """简报设置应支持读取与更新。"""
+    current = client.get("/api/v1/briefs/settings")
+    assert current.status_code == 200
+    assert current.json()["frequency_hours"] == 4
+    assert current.json()["content_level"] == "medium"
+
+    updated = client.put(
+        "/api/v1/briefs/settings",
+        json={"frequency_hours": 2, "content_level": "rich"},
+    )
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["frequency_hours"] == 2
+    assert body["content_level"] == "rich"
+
+    latest = client.get("/api/v1/briefs/latest")
+    assert latest.status_code == 200
+    assert "内容级别：rich" in latest.json().get("markdown", "")
+
+    refreshed = client.get("/api/v1/briefs/settings")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["frequency_hours"] == 2
+    assert refreshed.json()["content_level"] == "rich"

@@ -27,12 +27,7 @@ class SchedulerManager:
             id="waiting-timeout-scan",
             replace_existing=True,
         )
-        self._scheduler.add_job(
-            self._generate_periodic_brief,
-            IntervalTrigger(hours=self._services.settings.brief_window_hours),
-            id="periodic-brief",
-            replace_existing=True,
-        )
+        self.reschedule_periodic_brief(self._services.settings.brief_window_hours)
         self._scheduler.start()
         logger.info("scheduler_started")
 
@@ -55,5 +50,22 @@ class SchedulerManager:
             brief = await self._services.briefing_service.generate_latest(
                 session,
                 self._services.settings.brief_window_hours,
+                content_level=self._services.settings.brief_content_level,
             )
         logger.info("periodic_brief_generated", length=len(brief.markdown))
+
+    def reschedule_periodic_brief(self, frequency_hours: int) -> None:
+        """更新定时简报触发间隔。"""
+        normalized_hours = max(1, min(24, int(frequency_hours)))
+        trigger = IntervalTrigger(hours=normalized_hours)
+        existing = self._scheduler.get_job("periodic-brief")
+        if existing is None:
+            self._scheduler.add_job(
+                self._generate_periodic_brief,
+                trigger,
+                id="periodic-brief",
+                replace_existing=True,
+            )
+        else:
+            self._scheduler.reschedule_job("periodic-brief", trigger=trigger)
+        logger.info("periodic_brief_rescheduled", frequency_hours=normalized_hours)

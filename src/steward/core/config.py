@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     mcp_gateway_api_key: str = ""
 
     brief_window_hours: int = 4
+    brief_content_level: str = "medium"
     fallback_polling_minutes: int = 5
     interruption_budget_per_day: int = 10
     waiting_timeout_scan_seconds: int = 60
@@ -67,6 +68,7 @@ class Settings(BaseSettings):
 
     policy_file: str = Field(default="config/policy.yaml")
     integration_runtime_file: str = Field(default="config/integrations.runtime.json")
+    brief_runtime_file: str = Field(default="config/brief.runtime.json")
 
     @property
     def policy_path(self) -> Path:

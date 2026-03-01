@@ -11,6 +11,16 @@ const i18n = {
     placeholder: "描述你当前要处理的真实事项。按 Enter 提交，Shift+Enter 换行",
     btn_send: "发送",
     latest_brief: "最新简报",
+    brief_loading: "正在生成简报...",
+    brief_frequency: "频率",
+    brief_content_level: "内容层级",
+    brief_save: "保存",
+    brief_saved: "简报设置已更新",
+    brief_save_failed: "简报设置更新失败",
+    brief_waiting: "等待设置",
+    level_simple: "简单",
+    level_medium: "中等",
+    level_rich: "丰富",
     runtime_logs: "运行日志",
     integrations_title: "信息源管理",
     integrations_subtitle: "配置外部信息源，扩充上下文边界",
@@ -43,6 +53,16 @@ const i18n = {
     placeholder: "Describe the task you want to handle. Press Enter to submit, Shift+Enter for new line.",
     btn_send: "Send",
     latest_brief: "Latest Brief",
+    brief_loading: "Generating brief...",
+    brief_frequency: "Frequency",
+    brief_content_level: "Detail Level",
+    brief_save: "Save",
+    brief_saved: "Brief settings updated",
+    brief_save_failed: "Failed to update brief settings",
+    brief_waiting: "Waiting for settings",
+    level_simple: "Simple",
+    level_medium: "Medium",
+    level_rich: "Rich",
     runtime_logs: "Runtime Logs",
     integrations_title: "Integrations Management",
     integrations_subtitle: "Configure external sources to expand context boundaries.",
@@ -94,6 +114,12 @@ function applyI18n() {
   document.querySelector('.drawer-header p').textContent = t('integrations_subtitle');
   document.querySelector('.quick-nl-config label').textContent = t('nl_config');
   document.querySelector('.quick-nl-config .btn').textContent = t('btn_apply');
+  document.getElementById('brief-frequency-label').textContent = t('brief_frequency');
+  document.getElementById('brief-content-level-label').textContent = t('brief_content_level');
+  document.getElementById('brief-settings-save-btn').textContent = t('brief_save');
+  document.querySelector('#brief-content-level option[value="simple"]').textContent = t('level_simple');
+  document.querySelector('#brief-content-level option[value="medium"]').textContent = t('level_medium');
+  document.querySelector('#brief-content-level option[value="rich"]').textContent = t('level_rich');
 }
 
 // Ensure marked.js is available
@@ -111,6 +137,10 @@ const pendingBadgeEl = document.getElementById("pending-badge");
 const conflictListEl = document.getElementById("conflict-list");
 const conflictBadgeEl = document.getElementById("conflict-badge");
 const briefMarkdownEl = document.getElementById("brief-markdown");
+const briefFrequencyEl = document.getElementById("brief-frequency-hours");
+const briefContentLevelEl = document.getElementById("brief-content-level");
+const briefSettingsSaveBtn = document.getElementById("brief-settings-save-btn");
+const briefSettingsStatusEl = document.getElementById("brief-settings-status");
 const runtimeLogsEl = document.getElementById("runtime-logs");
 const eventFormEl = document.getElementById("event-form");
 const eventInputEl = document.getElementById("event-input");
@@ -125,6 +155,7 @@ const langSwitchEl = document.getElementById("lang-switch");
 let hasInitializedSnapshot = false;
 let lastPendingPlanIds = new Set();
 let lastConflictIds = new Set();
+let briefSettingsLoaded = false;
 
 // --- Init ---
 langSwitchEl.value = currentLang;
@@ -211,6 +242,49 @@ async function ensureNotificationPermission() {
 function notifyBrowser(title, body) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   try { new Notification(title, { body }); } catch (e) { }
+}
+
+async function refreshBriefSettings(force = false) {
+  if (briefSettingsLoaded && !force) return;
+  try {
+    const data = await fetchApi("/api/v1/briefs/settings");
+    const frequency = String(data?.frequency_hours || "4");
+    const level = data?.content_level || "medium";
+    briefFrequencyEl.value = frequency;
+    briefContentLevelEl.value = level;
+    briefSettingsStatusEl.textContent = t('brief_waiting');
+    briefSettingsLoaded = true;
+  } catch (e) {
+    briefSettingsStatusEl.textContent = t('brief_save_failed');
+  }
+}
+
+async function saveBriefSettings() {
+  const frequencyHours = Number(briefFrequencyEl.value || 4);
+  const contentLevel = String(briefContentLevelEl.value || "medium");
+  briefSettingsSaveBtn.disabled = true;
+  briefSettingsStatusEl.textContent = "...";
+  try {
+    const response = await fetch("/api/v1/briefs/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        frequency_hours: frequencyHours,
+        content_level: contentLevel,
+      }),
+    });
+    if (!response.ok) throw new Error("save_failed");
+    const data = await response.json();
+    briefFrequencyEl.value = String(data?.frequency_hours || frequencyHours);
+    briefContentLevelEl.value = String(data?.content_level || contentLevel);
+    briefSettingsStatusEl.textContent = t('brief_saved');
+    briefSettingsLoaded = true;
+    await refreshAll();
+  } catch (e) {
+    briefSettingsStatusEl.textContent = t('brief_save_failed');
+  } finally {
+    briefSettingsSaveBtn.disabled = false;
+  }
 }
 
 // --- Renderers ---
@@ -383,6 +457,7 @@ async function fetchApi(path) {
 
 async function refreshAll() {
   try {
+    await refreshBriefSettings();
     // 1) 先加载并渲染 snapshot（快速数据库查询，不依赖 LLM）
     const snapshot = await fetchApi("/api/v1/dashboard/snapshot").catch(() => ({}));
     if (snapshot.overview) renderKpis(snapshot.overview);
@@ -394,7 +469,7 @@ async function refreshAll() {
     lastUpdatedEl.textContent = `${t('last_updated')} ${fmtNow()}`;
 
     // 2) 简报异步加载（LLM 串行调用较慢），不阻塞页面渲染
-    briefMarkdownEl.innerHTML = `<span style="color:#888">⏳ ${t('brief_loading') || '正在生成简报...'}</span>`;
+    briefMarkdownEl.innerHTML = `<span style="color:#888">⏳ ${t('brief_loading')}</span>`;
     fetchApi("/api/v1/briefs/latest").then(brief => {
       const briefText = brief?.markdown || "";
       if (typeof marked !== 'undefined' && briefText) {
@@ -413,6 +488,7 @@ async function refreshAll() {
 // Listeners
 refreshBtn.addEventListener("click", refreshAll);
 eventFormEl.addEventListener("submit", submitEvent);
+briefSettingsSaveBtn.addEventListener("click", saveBriefSettings);
 
 // Init
 ensureNotificationPermission();

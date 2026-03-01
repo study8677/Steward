@@ -18,6 +18,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestCli
     db_path = tmp_path / "steward-test.db"
     model_config_path = tmp_path / "model.yaml"
     integration_runtime_path = tmp_path / "integrations.runtime.json"
+    brief_runtime_path = tmp_path / "brief.runtime.json"
     model_config_path.write_text(
         "\n".join(
             [
@@ -40,6 +41,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestCli
     monkeypatch.setenv("STEWARD_ENABLE_SCHEDULER", "false")
     monkeypatch.setenv("STEWARD_MODEL_CONFIG_FILE", str(model_config_path))
     monkeypatch.setenv("STEWARD_INTEGRATION_RUNTIME_FILE", str(integration_runtime_path))
+    monkeypatch.setenv("STEWARD_BRIEF_RUNTIME_FILE", str(brief_runtime_path))
     monkeypatch.setenv("STEWARD_GITHUB_TOKEN", "")
     monkeypatch.setenv("STEWARD_SLACK_SIGNING_SECRET", "slack-test-secret")
     monkeypatch.setenv("STEWARD_GMAIL_PUBSUB_VERIFICATION_TOKEN", "gmail-token")

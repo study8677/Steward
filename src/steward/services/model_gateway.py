@@ -32,6 +32,10 @@ class ModelGateway:
         self._settings = settings
         self._logger = structlog.get_logger("model_gateway")
 
+    def is_model_configured(self) -> bool:
+        """模型 API 是否可用。"""
+        return bool(self._settings.model_api_key.strip())
+
     async def route_space(
         self,
         event_summary: str,
@@ -163,29 +167,33 @@ class ModelGateway:
         steps: list[dict[str, object]],
         outcome: str,
         reason: str,
+        content_level: str = "medium",
     ) -> str:
         """为已执行完毕/被阻断的计划生成自然语言总结汇报。"""
-        if not self._settings.model_api_key:
+        level = self._normalize_brief_content_level(content_level)
+        fallback = self._build_executed_summary_fallback(
+            intent=intent,
+            steps=steps,
+            outcome=outcome,
+            reason=reason,
+            content_level=level,
+        )
+        if not self.is_model_configured():
             self._logger.warning("summarize_executed_plan_no_api_key")
-            return "[大模型不可用] 未配置 API Key"
+            return fallback
 
         payload = {
             "model": self._settings.model_default,
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "你是系统执行简报助手。"
-                        "请根据计划意图、步骤、最终结果和原因，写一句客观的中文战报。"
-                    ),
+                    "content": self._executed_summary_system_prompt(level),
                 },
                 {
                     "role": "user",
                     "content": (
                         "输出要求：\n"
-                        "1) 只输出一句中文，不带 Markdown，不要出现 '根据...'\n"
-                        "2) 必须包含核心动作的业务含义和最终结果（成功/失败原因）。\n"
-                        "3) 18-50 字，精简干练，体现助理帮用户处理完事情的状态。\n"
+                        f"{self._executed_summary_output_requirements(level)}\n"
                         f"计划ID: {plan_id}\n"
                         f"意图: {intent}\n"
                         f"步骤: {json.dumps(steps, ensure_ascii=False)}\n"
@@ -217,7 +225,7 @@ class ModelGateway:
                 )
         except httpx.HTTPError as exc:
             self._logger.error("summarize_executed_plan_http_error", error=str(exc))
-            return f"[大模型不可用] 网络错误: {type(exc).__name__}"
+            return fallback
 
         if response.status_code >= 400:
             self._logger.error(
@@ -225,22 +233,20 @@ class ModelGateway:
                 status_code=response.status_code,
                 body=response.text[:200],
             )
-            return f"[大模型不可用] API 返回 {response.status_code}"
+            return fallback
 
         data = response.json()
         choices = data.get("choices", [])
         if not choices:
             self._logger.warning("summarize_executed_plan_empty_choices", data=str(data)[:200])
-            return "[大模型不可用] 返回为空"
+            return fallback
 
         content = str(choices[0].get("message", {}).get("content", "")).strip()
         if not content:
-            return "[大模型不可用] 返回内容为空"
+            return fallback
 
         # Clean up output
-        text = content.replace("\n", " ").replace("\r", " ").strip()
-        if len(text) > 120:
-            text = f"{text[:117]}..."
+        text = self._normalize_executed_summary(content, content_level=level, fallback=fallback)
         self._logger.info("summarize_executed_plan_ok", plan_id=plan_id[:8], summary=text[:50])
         return text
 
@@ -612,6 +618,134 @@ class ModelGateway:
         return self._normalize_pending_summary(
             sentence, fallback="该计划为待确认任务，请根据风险后再执行。"
         )
+
+    def _normalize_brief_content_level(self, content_level: str) -> str:
+        """标准化简报内容层级。"""
+        level = content_level.strip().lower()
+        if level not in {"simple", "medium", "rich"}:
+            return "medium"
+        return level
+
+    def _executed_summary_system_prompt(self, content_level: str) -> str:
+        """返回分层级的系统 Prompt。"""
+        if content_level == "simple":
+            return "你是系统执行简报助手。输出短句式中文结果，优先传达动作与结果，避免背景解释。"
+        if content_level == "rich":
+            return (
+                "你是系统执行简报助手。输出信息密度较高的中文总结，覆盖动作、结果、风险或后续建议。"
+            )
+        return "你是系统执行简报助手。请根据计划意图、步骤、最终结果和原因，写一句客观的中文战报。"
+
+    def _executed_summary_output_requirements(self, content_level: str) -> str:
+        """返回分层级输出约束。"""
+        if content_level == "simple":
+            return (
+                "1) 只输出一句中文，不带 Markdown，不要出现 '根据...'\n"
+                "2) 必须包含核心动作和最终结果。\n"
+                "3) 12-28 字，越短越好。"
+            )
+        if content_level == "rich":
+            return (
+                "1) 仅输出中文，不带 Markdown。\n"
+                "2) 输出 1-2 句，覆盖：执行动作 + 最终结果 + 关键原因/风险。\n"
+                "3) 40-110 字，信息密度高但不啰嗦。"
+            )
+        return (
+            "1) 只输出一句中文，不带 Markdown，不要出现 '根据...'\n"
+            "2) 必须包含核心动作的业务含义和最终结果（成功/失败原因）。\n"
+            "3) 18-50 字，精简干练，体现助理帮用户处理完事情的状态。"
+        )
+
+    def _build_executed_summary_fallback(
+        self,
+        *,
+        intent: str,
+        steps: list[dict[str, object]],
+        outcome: str,
+        reason: str,
+        content_level: str,
+    ) -> str:
+        """模型不可用时构建执行摘要回退文案。"""
+        action_detail = self._extract_action_detail(intent=intent, steps=steps)
+        result = self._normalize_outcome(outcome)
+        reason_text = reason.strip()
+        if content_level == "simple":
+            sentence = f"{action_detail}，结果：{result}。"
+            return self._normalize_executed_summary(
+                sentence,
+                content_level=content_level,
+                fallback="任务已处理，结果请查看计划详情。",
+            )
+        if content_level == "rich":
+            rich_sentence = (
+                f"已执行 {action_detail}，结果：{result}。"
+                f"{' 关键原因：' + reason_text + '。' if reason_text else ''}"
+                "如需调整策略，可在反馈入口标注此 plan。"
+            )
+            return self._normalize_executed_summary(
+                rich_sentence,
+                content_level=content_level,
+                fallback="任务已执行完成，请在计划详情中查看完整结果与原因。",
+            )
+        medium_sentence = (
+            f"已执行 {action_detail}，结果：{result}"
+            f"{'，原因：' + reason_text if reason_text else ''}。"
+        )
+        return self._normalize_executed_summary(
+            medium_sentence,
+            content_level=content_level,
+            fallback="任务已执行完成，请查看计划详情。",
+        )
+
+    def _extract_action_detail(self, *, intent: str, steps: list[dict[str, object]]) -> str:
+        """从步骤中提取核心动作信息。"""
+        if not steps:
+            return intent or "任务"
+        first_step = steps[0]
+        connector = str(first_step.get("connector", "manual"))
+        action_type = str(first_step.get("action_type", intent or "follow_up"))
+        detail = ""
+        payload = first_step.get("payload")
+        if isinstance(payload, dict):
+            for key in ("summary", "text", "body", "title", "subject", "intent"):
+                value = payload.get(key)
+                if value:
+                    detail = str(value).strip()
+                    break
+        if detail:
+            return f"{connector}.{action_type}（{detail[:40]}）"
+        return f"{connector}.{action_type}"
+
+    def _normalize_outcome(self, outcome: str) -> str:
+        """标准化执行结果。"""
+        normalized = outcome.strip().lower()
+        mapping = {
+            "succeeded": "成功",
+            "success": "成功",
+            "failed": "失败",
+            "pending": "待处理",
+            "running": "执行中",
+            "blocked": "受阻",
+            "canceled": "已取消",
+        }
+        return mapping.get(normalized, outcome or "未知")
+
+    def _normalize_executed_summary(
+        self,
+        content: str,
+        *,
+        content_level: str,
+        fallback: str,
+    ) -> str:
+        """按层级清洗执行摘要输出。"""
+        text = content.replace("\n", " ").replace("\r", " ").strip()
+        if not text:
+            return fallback
+
+        max_length = 80 if content_level == "simple" else (220 if content_level == "rich" else 140)
+        if len(text) > max_length:
+            text = f"{text[: max_length - 3]}..."
+        return text
 
     def _normalize_pending_summary(self, content: str, *, fallback: str) -> str:
         """清洗模型/启发式输出，统一长度与可读性。"""

@@ -9,6 +9,7 @@ from steward.core.config import Settings
 from steward.core.policy import PolicyLoader
 from steward.learning.feedback import FeedbackLearningService
 from steward.services.action_runner import ActionRunnerService
+from steward.services.brief_preferences import BriefPreferenceService
 from steward.services.briefing import BriefingService
 from steward.services.capability_manager import CapabilityManagerService
 from steward.services.conflict import ConflictService
@@ -42,6 +43,7 @@ class ServiceContainer:
     waiting_service: WaitingService
     conflict_service: ConflictService
     briefing_service: BriefingService
+    brief_preference_service: BriefPreferenceService
     feedback_service: FeedbackLearningService
     capability_manager_service: CapabilityManagerService
     dashboard_service: DashboardService
@@ -56,6 +58,8 @@ def build_service_container(settings: Settings) -> ServiceContainer:
     model_gateway = ModelGateway(settings)
     integration_config_service = IntegrationConfigService(settings, model_gateway)
     integration_config_service.load_runtime_overrides()
+    brief_preference_service = BriefPreferenceService(settings)
+    brief_preference_service.load_runtime_overrides()
     connectors = ConnectorRegistry(settings)
 
     context_space_service = ContextSpaceService(model_gateway)
@@ -98,6 +102,7 @@ def build_service_container(settings: Settings) -> ServiceContainer:
         waiting_service=waiting_service,
         conflict_service=conflict_service,
         briefing_service=briefing_service,
+        brief_preference_service=brief_preference_service,
         feedback_service=feedback_service,
         capability_manager_service=capability_manager_service,
         dashboard_service=dashboard_service,

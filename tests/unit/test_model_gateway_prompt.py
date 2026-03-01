@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -118,3 +120,46 @@ async def test_summarize_pending_plan_with_model() -> None:
         ],
     )
     assert "高风险" in summary
+
+
+@pytest.mark.asyncio()
+@respx.mock
+async def test_summarize_executed_plan_prompt_changes_with_level() -> None:
+    """执行简报 Prompt 应根据内容层级变化。"""
+    route = respx.post("https://model.example/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "已完成跟进并同步结果。"}}]},
+        )
+    )
+    gateway = ModelGateway(
+        Settings(
+            model_api_key="token",
+            model_base_url="https://model.example",
+            model_default="test-model",
+        )
+    )
+
+    await gateway.summarize_executed_plan(
+        plan_id="plan-rich",
+        intent="follow_up",
+        steps=[{"connector": "chat", "action_type": "reply_thread", "payload": {"text": "ok"}}],
+        outcome="succeeded",
+        reason="none",
+        content_level="rich",
+    )
+    rich_payload = json.loads(route.calls[-1].request.content.decode("utf-8"))
+    rich_prompt = str(rich_payload["messages"][1]["content"])
+    assert "输出 1-2 句" in rich_prompt
+
+    await gateway.summarize_executed_plan(
+        plan_id="plan-simple",
+        intent="follow_up",
+        steps=[{"connector": "chat", "action_type": "reply_thread", "payload": {"text": "ok"}}],
+        outcome="succeeded",
+        reason="none",
+        content_level="simple",
+    )
+    simple_payload = json.loads(route.calls[-1].request.content.decode("utf-8"))
+    simple_prompt = str(simple_payload["messages"][1]["content"])
+    assert "12-28 字" in simple_prompt

@@ -40,7 +40,9 @@ def brief() -> None:
         settings, services = _init_services()
         async with db.session_factory() as session:
             result = await services.briefing_service.generate_latest(
-                session, settings.brief_window_hours
+                session,
+                settings.brief_window_hours,
+                content_level=settings.brief_content_level,
             )
             typer.echo(result.markdown)
         await db.dispose()
