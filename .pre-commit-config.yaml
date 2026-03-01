@@ -1,0 +1,13 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: check-module-comments
+        name: check-module-comments
+        entry: python scripts/check_module_comments.py
+        language: system
+        pass_filenames: false

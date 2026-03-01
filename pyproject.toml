@@ -1,0 +1,104 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "steward"
+version = "0.1.0"
+description = "Steward ambient proactive agent"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.14,<3.15"
+authors = [
+  { name = "Steward Team" }
+]
+dependencies = [
+  "fastapi==0.134.0",
+  "uvicorn==0.41.0",
+  "pydantic==2.12.5",
+  "pydantic-settings==2.13.1",
+  "sqlalchemy==2.0.47",
+  "alembic==1.18.4",
+  "asyncpg==0.31.0",
+  "apscheduler==3.11.2",
+  "httpx==0.28.1",
+  "structlog==25.5.0",
+  "prometheus-client==0.24.1",
+  "opentelemetry-sdk==1.39.1",
+  "opentelemetry-exporter-otlp==1.39.1",
+  "pyyaml==6.0.3",
+  "python-dotenv==1.2.1",
+  "typer==0.24.1",
+  "greenlet>=3.2.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.0.2",
+  "pytest-asyncio==1.3.0",
+  "respx==0.22.0",
+  "freezegun==1.5.5",
+  "mypy==1.19.1",
+  "ruff==0.15.4",
+  "pre-commit==4.5.1",
+  "aiosqlite>=0.21.0",
+]
+macos = [
+  "rumps==0.4.0",
+]
+
+[project.scripts]
+steward = "steward.cli:app"
+steward-server = "steward.main:run"
+steward-menubar = "steward.macos.menu_bar:main"
+steward-screen-sensor = "steward.macos.screen_sensor:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/steward"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+warn_return_any = true
+warn_unused_configs = true
+plugins = []
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "UP",
+  "B",
+  "SIM",
+  "C4",
+  "D",
+]
+ignore = [
+  "D100",
+  "D104",
+  "D107",
+  "D415",
+  "B008",
+  "E501",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

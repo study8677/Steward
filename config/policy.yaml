@@ -1,0 +1,172 @@
+policy:
+  interruption_budget_per_day: 10
+  brief_window_hours: 4
+  fallback_polling_minutes: 5
+  waiting_default_timeout_hours: 24
+  waiting_timeout_action: remind_then_escalate
+  quiet_hours:
+    enabled: true
+    rule: meeting_or_focus_only_p0
+
+risk:
+  high_risk_auto_enabled: true
+  high_risk_confidence_threshold: 0.92
+  require_multi_source_count: 2
+  require_rollback_or_undo_window: true
+  undo_window_seconds: 60
+
+actions:
+  high_risk_whitelist:
+    - internal_status_transition
+    - schedule_internal_meeting
+  irreversible_actions:
+    - external_commitment_send
+    - payment_or_contract_change
+    - delete_external_record
+  forbid_silent_execution_for_irreversible: true
+  require_manual_click_for_irreversible: true
+  always_require_confirmation:
+    - external_commitment_send
+    - payment_or_contract_change
+
+model:
+  deployment_mode: api
+  api:
+    provider: configurable
+    base_url: "https://api.openai.com/v1"
+    model_router: "top-reasoning-model"
+    model_default: "balanced-general-model"
+    model_fallback: "fast-fallback-model"
+    api_key_env: "STEWARD_MODEL_API_KEY"
+    timeout_ms: 12000
+    max_retries: 2
+    retry_backoff_ms: 500
+    circuit_breaker_failures: 5
+    circuit_breaker_cooldown_seconds: 30
+
+integration:
+  skills:
+    allowlist:
+      - github
+      - gmail
+      - slack
+      - screen-sensor
+    denylist: []
+    default_mode: read_only
+  mcp_servers:
+    - name: github
+      transport: stdio
+      enabled: true
+    - name: workspace-mail
+      transport: http
+      enabled: true
+    - name: chat
+      transport: http
+      enabled: true
+  auto_manage:
+    enabled: true
+    trusted_sources:
+      - github.com/modelcontextprotocol
+      - github.com/github
+      - internal-registry.steward
+    require_signature: true
+    allow_auto_upgrade: true
+    upgrade_window: "02:00-05:00"
+    rollback_on_healthcheck_failure: true
+    default_install_mode: read_only
+    install_request_channel: periodic_brief
+    install_requires_user_confirmation: true
+    install_prompt_respects_interruption_budget: true
+
+runtime:
+  waiting_engine:
+    backend: postgres
+    resume_match_mode: indexed_match_key
+    timeout_scan_interval_seconds: 60
+  event_ingest:
+    mode: webhook_first
+    bus_fallback_enabled: true
+
+conflict:
+  enabled: true
+  detect_at_plan_time: true
+  detect_at_commit_time: true
+  default_resolution_order: [merge, serialize, replan, escalate]
+  lock_ttl_seconds: 120
+  semantic_conflict_check_for_brief: true
+  auto_escalate_on_irreversible_conflict: true
+
+routing:
+  context_space_router:
+    mode: llm_multiple_choice
+    allow_unbounded_space_store: true
+    recency_window_hours: 48
+    retrieval_candidates_max: 50
+    llm_candidates_max: 12
+    always_include_pinned: true
+    run_resurrection_before_new: true
+    output_schema: strict_space_id_or_new
+    min_confidence: 0.70
+
+lifecycle:
+  context_space:
+    states: [active, dormant, parked, archived]
+    dormant_after_hours: 48
+    parked_after_days: 7
+    archive_after_days: 30
+    auto_pin_if_open_commitment: true
+    auto_pin_if_waiting_dependency: true
+    resurrection_enabled: true
+    resurrection_similarity_threshold: 0.78
+
+learning:
+  enabled: true
+  mode: assisted
+  min_samples_for_adaptation: 5
+  decay_half_life_days: 30
+  safe_apply_after_shadow_days: 7
+  never_override_irreversible_rules: true
+  feedback_loop:
+    reject_auto_to_confirm: true
+    reject_auto_threshold: 2
+    promote_confirm_to_auto_threshold: 5
+  priority_personalization:
+    enabled: true
+    similarity_key: [source, intent, entity_type, counterpart_role]
+    manual_priority_boost_weight: 0.25
+    max_auto_boost_level: 1
+  interruption_budget_auto_tune:
+    enabled: true
+    target_utilization: 0.75
+    floor: 6
+    ceiling: 16
+    step_per_day: 1
+    freeze_on_negative_feedback_spike: true
+
+observability:
+  enabled: true
+  metrics:
+    export_interval_seconds: 15
+    retention_days: 30
+    track:
+      - context_space_count_by_state
+      - context_space_growth_rate
+      - gate_pass_rate
+      - llm_router_latency_p95
+      - llm_router_error_rate
+      - waiting_queue_size
+      - waiting_timeout_rate
+      - action_success_rate
+      - rollback_rate
+  alerts:
+    dlq_backlog_threshold: 100
+    connector_healthcheck_consecutive_failures: 3
+    llm_latency_p95_ms_threshold: 3000
+    llm_error_rate_threshold: 0.05
+    context_space_growth_anomaly_zscore: 3.0
+  dashboard:
+    enabled: true
+    refresh_seconds: 15
+    include_user_view: true
+    include_ops_view: true
+    show_recent_decisions_count: 50

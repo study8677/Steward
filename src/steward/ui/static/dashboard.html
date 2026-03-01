@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Steward Daily Brief Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+    rel="stylesheet" />
+  <!-- Add Markdown parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="/ui/dashboard.css" />
+</head>
+
+<body>
+  <!-- Ambient background -->
+  <div class="bg-mesh">
+    <div class="bg-shape shape-1"></div>
+    <div class="bg-shape shape-2"></div>
+    <div class="bg-shape shape-3"></div>
+  </div>
+
+  <main class="layout">
+    <header class="hero glass-panel">
+      <div class="hero-content">
+        <h1>Steward Brief Hub</h1>
+        <p>The ambient proactive agent. Focus on decisions, leave the noise to the system.</p>
+      </div>
+      <div class="hero-actions">
+        <span id="last-updated" class="text-sm muted">最后刷新：--</span>
+        <select id="lang-switch" class="btn btn-secondary btn-sm"
+          style="padding: 4px 8px; border-radius: 6px; font-size: 0.8rem;">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+        <button id="open-integrations-btn" class="btn btn-secondary">信息源管理</button>
+        <button id="refresh-btn" class="btn btn-primary" type="button">立即刷新</button>
+      </div>
+    </header>
+
+    <section class="kpis" id="kpi-cards"></section>
+
+    <!-- Prioritize Actionable Items -->
+    <section class="grid items-priority">
+      <!-- 核心决策区：待确认与冲突 -->
+      <article class="card highlight-card">
+        <div class="card-header">
+          <h2>待确认计划</h2>
+          <span class="badge" id="pending-badge">0</span>
+        </div>
+        <div id="pending-list" class="list"></div>
+      </article>
+
+      <article class="card highlight-card">
+        <div class="card-header">
+          <h2>冲突工单</h2>
+          <span class="badge danger-badge" id="conflict-badge">0</span>
+        </div>
+        <div id="conflict-list" class="list"></div>
+      </article>
+    </section>
+
+    <!-- Information & Context -->
+    <section class="grid items-context">
+      <article class="card">
+        <h2>连接器健康</h2>
+        <div id="connector-health" class="health-grid"></div>
+      </article>
+
+      <!-- 自然语言提交事件作为主要输入口 -->
+      <article class="card quick-action">
+        <h2>告诉 Steward (Cmd/Ctrl + K)</h2>
+        <form id="event-form">
+          <label class="sr-only">只需要说一句你要处理的事情</label>
+          <div class="input-group">
+            <textarea id="event-input" name="text" rows="1" class="auto-resize"
+              placeholder="描述你当前要处理的真实事项。按 Enter 提交，Shift+Enter 换行" required></textarea>
+            <button type="submit" class="btn btn-primary">发送</button>
+          </div>
+        </form>
+        <p id="event-result" class="status-msg">等待输入</p>
+      </article>
+
+      <article class="card brief-card">
+        <h2>最新简报</h2>
+        <div id="brief-markdown" class="brief markdown-body"></div>
+      </article>
+
+      <article class="card brief-card">
+        <h2>运行日志</h2>
+        <div id="runtime-logs" class="list compact-list"></div>
+      </article>
+    </section>
+  </main>
+
+  <!-- Slide-out Drawer for Integrations (SPA Experience) -->
+  <div id="integrations-overlay" class="drawer-overlay hidden">
+    <aside id="integrations-drawer" class="drawer">
+      <header class="drawer-header">
+        <div>
+          <h2>信息源管理</h2>
+          <p class="muted text-sm">配置外部信息源，扩充上下文边界</p>
+        </div>
+        <button id="close-integrations-btn" class="icon-btn" aria-label="关闭">&times;</button>
+      </header>
+
+      <div class="drawer-content">
+        <section class="drawer-section">
+          <h3>新增自定义信息源</h3>
+          <form id="custom-provider-form" class="integration-form">
+            <div class="form-grid">
+              <label>
+                ID (英文/数字)
+                <input type="text" name="provider" placeholder="e.g. notion" required />
+              </label>
+              <label>
+                显示名称
+                <input type="text" name="display_name" placeholder="e.g. Notion" />
+              </label>
+              <label>
+                Type
+                <select name="source">
+                  <option value="chat">chat</option>
+                  <option value="email">email</option>
+                  <option value="calendar">calendar</option>
+                  <option value="screen">screen</option>
+                  <option value="github">github</option>
+                  <option value="local">local</option>
+                  <option value="manual">manual</option>
+                  <option value="custom" selected>custom</option>
+                </select>
+              </label>
+              <label>
+                Webhook Secret
+                <input type="password" name="webhook_secret" placeholder="Optional" />
+              </label>
+              <label class="full-width">
+                描述
+                <input type="text" name="description" placeholder="用途说明" />
+              </label>
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">建立配置</button>
+          </form>
+          <p id="custom-provider-result" class="status-msg">等待操作</p>
+        </section>
+
+        <section class="drawer-section">
+          <div class="section-header">
+            <h3>所有信息源状态</h3>
+            <span id="integration-last-updated" class="text-xs muted">...</span>
+          </div>
+
+          <div class="quick-nl-config">
+            <label>自然语言快速配置</label>
+            <form id="integration-form" class="nl-form">
+              <input type="text" id="integration-text" name="integration_text"
+                placeholder="e.g. 配置 slack, webhook secret是 xxx" required />
+              <button type="submit" class="btn btn-secondary btn-sm">应用</button>
+            </form>
+            <p id="integration-result" class="status-msg">等待配置</p>
+          </div>
+
+          <div id="integration-manage-list" class="integration-list mt-4"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Fallback if UI logic needs integration definitions -->
+  <script src="/ui/integrations.js" defer></script>
+  <script src="/ui/dashboard.js" defer></script>
+</body>
+
+</html>

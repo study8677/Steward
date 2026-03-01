@@ -1,0 +1,35 @@
+# Python 缓存与构建产物
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 虚拟环境
+.venv/
+
+# 环境变量
+.env
+config/model.yaml
+config/integrations.runtime.json
+
+# 本地数据库与日志
+*.db
+*.db-shm
+*.db-wal
+logs/
+
+# 前端依赖
+node_modules/
+
+# IDE 与系统文件
+.DS_Store
+.vscode/
+.idea/
+
+# Alembic 运行时文件
+migrations/__pycache__/

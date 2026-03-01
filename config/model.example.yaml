@@ -1,0 +1,27 @@
+# 模型配置文件模板。
+# 使用方式：
+# 1) 复制本文件为 config/model.yaml
+# 2) 填写真实模型配置（尤其是 api_key / api_key_env）
+# 3) 未完成配置时，Steward 会拒绝启动
+
+model:
+  # OpenAI 兼容网关地址，例如 https://api.openai.com/v1
+  base_url: "https://api.openai.com/v1"
+
+  # 二选一：
+  # 方案 A（推荐）：直接在本文件填入 API Key（注意不要提交到仓库）
+  api_key: "<your_api_key>"
+  # 方案 B：从环境变量读取（若使用此方案，可将 api_key 置空）
+  api_key_env: ""
+
+  # 路由模型（用于 Context Space 多选路由）
+  router: "top-reasoning-model"
+  # 默认模型（用于通用推理/总结）
+  default: "balanced-general-model"
+  # 回退模型（用于限流或降级）
+  fallback: "fast-fallback-model"
+
+  # 调用参数
+  timeout_ms: 12000
+  max_retries: 2
+  router_min_confidence: 0.70
