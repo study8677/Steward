@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -15,6 +15,8 @@ from steward.infra.db.models import (
     ConflictCase,
     ContextEvent,
     DecisionLog,
+    ExecutionAttempt,
+    ExecutionDispatch,
     TaskCandidate,
 )
 from steward.services.model_gateway import ModelGateway
@@ -41,6 +43,7 @@ class DashboardService:
         waiting_count = await self._count_by_state(session, PlanState.WAITING.value)
         running_count = await self._count_by_state(session, PlanState.RUNNING.value)
         conflicted_count = await self._count_by_state(session, PlanState.CONFLICTED.value)
+        queue_depth = await self._queue_depth(session)
 
         return {
             "plans_total": total_plans,
@@ -48,6 +51,7 @@ class DashboardService:
             "plans_waiting": waiting_count,
             "plans_running": running_count,
             "plans_conflicted": conflicted_count,
+            "queue_depth": queue_depth,
         }
 
     async def snapshot(self, session: AsyncSession) -> dict[str, Any]:
@@ -57,12 +61,17 @@ class DashboardService:
         conflicts = await self.open_conflicts(session)
         connector_health = await self.connector_health()
         recent_logs = await self.recent_runtime_logs(session)
+        retries_24h = await self.retries_24h(session)
+        failed_steps_24h = await self.failed_steps_24h(session)
         return {
             "overview": overview,
             "pending_confirmations": pending,
             "open_conflicts": conflicts,
             "connector_health": connector_health,
             "recent_logs": recent_logs,
+            "queue_depth": overview.get("queue_depth", 0),
+            "retries_24h": retries_24h,
+            "failed_steps_24h": failed_steps_24h,
         }
 
     async def pending_confirmations(self, session: AsyncSession) -> list[dict[str, Any]]:
@@ -106,6 +115,7 @@ class DashboardService:
                     "priority": task.priority,
                     "updated_at": plan.updated_at.isoformat(),
                     "human_summary": human_summary,
+                    "execution_status": plan.execution_status,
                 }
             )
         return items
@@ -147,6 +157,34 @@ class DashboardService:
     async def _count_by_state(self, session: AsyncSession, state: str) -> int:
         """统计指定状态计划数量。"""
         stmt = select(func.count()).select_from(ActionPlan).where(ActionPlan.state == state)
+        return int((await session.execute(stmt)).scalar_one())
+
+    async def _queue_depth(self, session: AsyncSession) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(ExecutionDispatch)
+            .where(ExecutionDispatch.status.in_(["queued", "running", "retrying"]))
+        )
+        return int((await session.execute(stmt)).scalar_one())
+
+    async def retries_24h(self, session: AsyncSession) -> int:
+        """Return total retries across dispatches in the last 24 hours."""
+        since = datetime.now(UTC) - timedelta(hours=24)
+        stmt = (
+            select(func.coalesce(func.sum(ExecutionDispatch.retry_count), 0))
+            .select_from(ExecutionDispatch)
+            .where(ExecutionDispatch.created_at >= since)
+        )
+        return int((await session.execute(stmt)).scalar_one())
+
+    async def failed_steps_24h(self, session: AsyncSession) -> int:
+        """Return failed execution step attempts in the last 24 hours."""
+        since = datetime.now(UTC) - timedelta(hours=24)
+        stmt = (
+            select(func.count())
+            .select_from(ExecutionAttempt)
+            .where(ExecutionAttempt.status == "failed", ExecutionAttempt.created_at >= since)
+        )
         return int((await session.execute(stmt)).scalar_one())
 
     # ---- 人类友好标签映射 ----

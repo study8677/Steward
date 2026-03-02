@@ -19,7 +19,7 @@ class ScreenConnector:
         return ["screen:read"]
 
     async def pull(self, cursor: str | None) -> list[dict[str, object]]:
-        """首版依赖外部上报，不主动拉取。"""
+        """依赖外部上报，不主动拉取。"""
         _ = cursor
         return []
 

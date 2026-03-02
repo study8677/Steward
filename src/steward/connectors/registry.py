@@ -7,10 +7,10 @@ from steward.connectors.calendar import CalendarConnector
 from steward.connectors.chat import ChatConnector
 from steward.connectors.email import EmailConnector
 from steward.connectors.github import GitHubConnector
-from steward.connectors.local import LocalConnector
 from steward.connectors.manual import ManualConnector
 from steward.connectors.mcp import MCPConnector
 from steward.connectors.screen import ScreenConnector
+from steward.connectors_runtime.runner import ConnectorRuntimeRunner
 from steward.core.config import Settings
 
 
@@ -18,13 +18,26 @@ class ConnectorRegistry:
     """连接器注册与路由。"""
 
     def __init__(self, settings: Settings) -> None:
+        self._runtime = ConnectorRuntimeRunner()
         self._connectors: dict[str, Connector] = {
-            "manual": ManualConnector(),
-            "local": LocalConnector(),
-            "github": GitHubConnector(token=settings.github_token),
-            "email": EmailConnector(outbound_enabled=settings.email_outbound_enabled),
+            "manual": ManualConnector(brain_dir=settings.brain_dir),
+            "github": GitHubConnector(
+                token=settings.github_token,
+                repos=settings.github_repos,
+            ),
+            "email": EmailConnector(
+                outbound_enabled=settings.email_outbound_enabled,
+                imap_host=settings.imap_host,
+                imap_port=settings.imap_port,
+                imap_user=settings.imap_user,
+                imap_password=settings.imap_password,
+            ),
             "chat": ChatConnector(outbound_enabled=settings.chat_outbound_enabled),
-            "calendar": CalendarConnector(),
+            "calendar": CalendarConnector(
+                caldav_url=settings.caldav_url,
+                caldav_user=settings.caldav_user,
+                caldav_password=settings.caldav_password,
+            ),
             "screen": ScreenConnector(),
             "mcp": MCPConnector(
                 gateway_base_url=settings.mcp_gateway_base_url,
@@ -41,6 +54,21 @@ class ConnectorRegistry:
     def names(self) -> list[str]:
         """返回已注册连接器名。"""
         return sorted(self._connectors.keys())
+
+    def validate_action(
+        self,
+        *,
+        connector: str,
+        action_type: str,
+        payload: dict[str, object],
+    ) -> tuple[bool, str]:
+        """根据声明式 connector spec 校验动作参数。"""
+        ok, reason, _ = self._runtime.validate_action(
+            connector=connector,
+            action_type=action_type,
+            payload=payload,
+        )
+        return ok, reason
 
     async def health(self) -> dict[str, ConnectorHealth]:
         """返回所有连接器健康状态。"""

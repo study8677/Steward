@@ -38,6 +38,7 @@ def test_dashboard_snapshot_and_page(client: TestClient) -> None:
     dashboard_page = client.get("/dashboard")
     assert dashboard_page.status_code == 200
     assert "Steward Brief Hub" in dashboard_page.text
+    assert "立即查看简报" in dashboard_page.text
 
     integration_page = client.get("/dashboard/integrations")
     assert integration_page.status_code == 200
@@ -143,6 +144,123 @@ def test_integration_status_and_nl_apply(client: TestClient) -> None:
     slack = next((item for item in after_items if item.get("provider") == "slack"), None)
     assert slack is not None
     assert bool(slack.get("configured")) is True
+
+
+def test_mcp_and_skill_management_api(client: TestClient) -> None:
+    """MCP 与 Skill 应支持列表、配置与启停。"""
+    snapshot = client.get("/api/v1/integrations")
+    assert snapshot.status_code == 200
+    body = snapshot.json()
+
+    mcp_servers = body.get("mcp_servers", [])
+    skills = body.get("skills", [])
+    assert any(item.get("server") == "github" for item in mcp_servers)
+    assert any(item.get("server") == "playwright" for item in mcp_servers)
+    assert any(item.get("skill") == "gh-fix-ci" for item in skills)
+
+    enable_mcp = client.post("/api/v1/integrations/mcp/github/enable")
+    assert enable_mcp.status_code == 200
+    github_status = next(
+        (
+            item
+            for item in enable_mcp.json().get("mcp_servers", [])
+            if item.get("server") == "github"
+        ),
+        None,
+    )
+    assert github_status is not None
+    assert github_status.get("enabled") is True
+
+    configure_mcp = client.post(
+        "/api/v1/integrations/mcp/github/configure",
+        json={"transport": "stdio", "command": "npx -y @modelcontextprotocol/server-github"},
+    )
+    assert configure_mcp.status_code == 200
+    assert "command" in configure_mcp.json().get("applied_fields", [])
+
+    enable_skill = client.post("/api/v1/integrations/skills/gh-fix-ci/enable")
+    assert enable_skill.status_code == 200
+    skill_status = next(
+        (
+            item
+            for item in enable_skill.json().get("skills", [])
+            if item.get("skill") == "gh-fix-ci"
+        ),
+        None,
+    )
+    assert skill_status is not None
+    assert skill_status.get("enabled") is True
+
+    nl_apply = client.post(
+        "/api/v1/integrations/nl",
+        json={"text": "启用 github mcp 和 playwright mcp，并启用 gh-fix-ci skill"},
+    )
+    assert nl_apply.status_code == 200
+    assert "mcp_servers" in nl_apply.json()
+    assert "skills" in nl_apply.json()
+
+
+def test_legacy_skill_api_is_backed_by_integrations(client: TestClient) -> None:
+    """旧 /skills 接口应复用 integrations 的统一技能状态。"""
+    catalog = client.get("/api/v1/skills/catalog")
+    assert catalog.status_code == 200
+    assert any(item.get("id") == "gh-fix-ci" for item in catalog.json().get("skills", []))
+
+    install = client.post(
+        "/api/v1/skills/install",
+        json={
+            "skill_id": "gh-fix-ci",
+            "config_values": {"GH_REPO_SCOPE": "owner/repo"},
+            "run_install_command": True,
+        },
+    )
+    assert install.status_code == 200
+    assert install.json().get("status") == "ok"
+
+    integrations = client.get("/api/v1/integrations")
+    assert integrations.status_code == 200
+    skill = next(
+        (
+            item
+            for item in integrations.json().get("skills", [])
+            if item.get("skill") == "gh-fix-ci"
+        ),
+        None,
+    )
+    assert skill is not None
+    assert skill.get("enabled") is True
+    assert skill.get("config_values", {}).get("GH_REPO_SCOPE") == "owner/repo"
+
+    installed = client.get("/api/v1/skills/installed")
+    assert installed.status_code == 200
+    installed_items = installed.json().get("installed", [])
+    assert any(
+        item.get("skill_id") == "gh-fix-ci" and item.get("enabled") for item in installed_items
+    )
+
+    toggle = client.post(
+        "/api/v1/skills/toggle",
+        json={"skill_id": "gh-fix-ci", "enabled": False},
+    )
+    assert toggle.status_code == 200
+    assert toggle.json().get("status") == "ok"
+
+    after_toggle = client.get("/api/v1/integrations")
+    assert after_toggle.status_code == 200
+    skill_after = next(
+        (
+            item
+            for item in after_toggle.json().get("skills", [])
+            if item.get("skill") == "gh-fix-ci"
+        ),
+        None,
+    )
+    assert skill_after is not None
+    assert skill_after.get("enabled") is False
+
+    uninstall = client.post("/api/v1/skills/uninstall", json={"skill_id": "gh-fix-ci"})
+    assert uninstall.status_code == 200
+    assert uninstall.json().get("status") == "ok"
 
 
 def test_custom_source_from_natural_language_and_webhook(client: TestClient) -> None:

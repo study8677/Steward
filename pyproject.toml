@@ -26,6 +26,8 @@ dependencies = [
   "prometheus-client==0.24.1",
   "opentelemetry-sdk==1.39.1",
   "opentelemetry-exporter-otlp==1.39.1",
+  "celery==5.5.3",
+  "redis==6.4.0",
   "pyyaml==6.0.3",
   "python-dotenv==1.2.1",
   "typer==0.24.1",
@@ -51,7 +53,8 @@ macos = [
 steward = "steward.cli:app"
 steward-server = "steward.main:run"
 steward-menubar = "steward.macos.menu_bar:main"
-steward-screen-sensor = "steward.macos.screen_sensor:main"
+steward-screen-sensor = "steward.screen_sensor.cli:main"
+steward-worker = "steward.runtime.execution.worker:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/steward"]

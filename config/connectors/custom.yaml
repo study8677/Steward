@@ -1,0 +1,12 @@
+connector: custom
+implemented: true
+auth:
+  mode: webhook
+  required_env: []
+actions:
+  - name: ingest_custom_event
+    required_payload_fields: [summary]
+    retryable: true
+streams: []
+meta:
+  source: steward

@@ -1,0 +1,13 @@
+connector: manual
+implemented: true
+auth:
+  mode: none
+  required_env: []
+actions:
+  - name: record_note
+    required_payload_fields: [summary]
+    retryable: true
+streams: []
+meta:
+  source: steward
+  reason: journal_note

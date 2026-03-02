@@ -30,7 +30,7 @@ Steward is your digital chief of staff — it silently monitors emails, GitHub, 
 | ⚡ **Autonomous Execution** | Low-risk tasks auto-completed with full audit trail and rollback capability |
 | 🛡️ **Policy Gate** | High-risk / irreversible actions require explicit human approval — no override possible |
 | 📋 **Periodic Briefs** | Every 4 hours: natural language summary of "what was done, what's pending, what needs your call" |
-| 🔌 **Pluggable Connectors** | Slack, Gmail, Google Calendar, MCP — unified connector protocol |
+| 🔌 **Capability Hub (MCP + Skills)** | Community-first capability model with unified enable/disable/configure flow in Dashboard |
 | 🧩 **Conflict Arbiter** | When multiple plans compete for the same resource: auto merge / serialize / escalate |
 
 ## 📸 Dashboard Preview
@@ -49,7 +49,7 @@ Steward is your digital chief of staff — it silently monitors emails, GitHub, 
 
 ## 🚀 Quick Start
 
-**One command. That's it.**
+### 1) API/UI quick start (no Docker required)
 
 ```bash
 git clone https://github.com/user/Steward.git
@@ -79,14 +79,53 @@ An interactive wizard walks you through setup:
    Dashboard:  http://127.0.0.1:8000/dashboard
 ```
 
-Just one **API Key** — no Docker, no manual config editing.
+This mode is great for local exploration of API/UI and manual confirmation flows.
 
-> 💡 **Power users**: For PostgreSQL, set `STEWARD_DATABASE_URL` and run `docker compose up -d && make upgrade`.
+### 2) Full real execution mode (recommended)
+
+To run **real asynchronous execution** (`gate_result=auto` dispatches to queue), Steward needs:
+
+- a Redis broker
+- a running worker process (`steward-worker`)
+
+Docker is **not mandatory**. It is only the easiest way to boot Postgres + Redis locally.
+
+```bash
+# terminal A
+docker compose up -d        # starts postgres + redis
+make upgrade
+make run
+
+# terminal B
+make worker
+```
+
+If you don't want Docker, use your local Postgres/Redis instead and set env vars accordingly.
+
+### 3) API/UI only with execution disabled (optional)
+
+```bash
+export STEWARD_EXECUTION_ENABLED=false
+make run
+```
+
+## 🔌 Capability Management (First Principles)
+
+- Single capability model: `MCP Server + Skill` is the primary integration abstraction.
+- Community-first reuse: prefer existing MCP servers and local/community skills before custom providers.
+- Dashboard entry: `http://127.0.0.1:8000/dashboard/integrations`.
+- Core API:
+  - `GET /api/v1/integrations`
+  - `POST /api/v1/integrations/nl`
+  - `POST /api/v1/integrations/mcp/{server}/configure|enable|disable`
+  - `POST /api/v1/integrations/skills/{skill}/configure|enable|disable`
+- Runtime persistence: `config/integrations.runtime.json` (`config`, `custom_providers`, `mcp_servers`, `skills`).
+- Compatibility note: `/api/v1/skills` remains as a compatibility facade, backed by the same integration state.
 
 ## 🏗️ Architecture
 
 ```
-Signal Sources (GitHub / Email / Calendar / Screen / MCP)
+Signal Sources (GitHub / Email / Calendar / Screen / MCP / Skill)
          │
          ▼
    ┌─────────────┐
@@ -103,13 +142,18 @@ Signal Sources (GitHub / Email / Calendar / Screen / MCP)
    │ Policy Gate  │  ← Risk assessment, confidence, interruption budget
    └──────┬──────┘
           │
+          ▼
+   ┌─────────────┐
+   │ Async Dispatch│ ← Celery + Redis queue
+   └──────┬──────┘
+          │
      ┌────┴────┐
      ▼         ▼
-  Auto-exec  Ask User
+  Worker Exec Ask User
      │         │
      ▼         ▼
    ┌─────────────┐
-   │ Brief & Audit│  ← NL summaries, full decision trace
+   │ Brief & Audit│  ← NL summaries + execution attempts
    └─────────────┘
 ```
 
@@ -121,6 +165,7 @@ Signal Sources (GitHub / Email / Calendar / Screen / MCP)
 | API | FastAPI + Uvicorn |
 | Data | SQLite (default) / PostgreSQL + SQLAlchemy + Alembic |
 | Scheduling | APScheduler (event-driven first, polling as fallback) |
+| Execution Runtime | Celery + Redis |
 | Models | Any OpenAI-compatible API |
 | Observability | structlog + OpenTelemetry + Prometheus |
 
@@ -129,13 +174,16 @@ Signal Sources (GitHub / Email / Calendar / Screen / MCP)
 ```
 steward/
 ├── api/              # FastAPI routes (REST + Webhooks)
+├── planning/         # Superpowers-guided plan compilation and policy checks
 ├── core/             # Config, logging, model layer
 ├── domain/           # Enums, schemas, domain models
 ├── infra/            # Database, migrations
-├── connectors/       # GitHub / Email / Calendar / MCP connectors
+├── connectors/       # GitHub / Email / Calendar / MCP / Skill connectors
+├── connectors_runtime/# Declarative connector specs + runtime validation
 ├── services/         # Core logic (policy gate, briefs, conflict arbiter)
-├── runtime/          # Scheduler, state machine
-├── macos/            # macOS menu bar & screen sensor
+├── runtime/          # Scheduler + async execution worker runtime
+├── macos/            # macOS menu bar shell
+├── screen_sensor/    # Cross-platform screen sensor (macOS / Windows / Linux)
 └── ui/               # Dashboard frontend
 ```
 

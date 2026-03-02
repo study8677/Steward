@@ -1,4 +1,4 @@
-"""反馈学习服务（首版实现最小闭环）。"""
+"""反馈学习服务。"""
 
 from __future__ import annotations
 

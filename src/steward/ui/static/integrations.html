@@ -1,13 +1,147 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="zh-CN">
 
 <head>
-    <meta charset="UTF-8">
-    <title>Steward Integrations</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#125446" />
+  <title>Steward Capability Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/ui/dashboard.css" />
+  <link rel="stylesheet" href="/ui/integrations.css" />
 </head>
 
-<body>
-    <h1>信息源管理 (Steward Integrations)</h1>
+<body class="integrations-page">
+  <a href="#main-content" class="skip-link">跳到主内容</a>
+
+  <div class="bg-mesh">
+    <div class="bg-shape shape-1"></div>
+    <div class="bg-shape shape-2"></div>
+    <div class="bg-shape shape-3"></div>
+  </div>
+
+  <main id="main-content" class="layout">
+    <header class="hero glass-panel">
+      <div class="hero-content">
+        <h1 id="integrations-page-title">能力管理中心（信息源管理）</h1>
+        <p id="integrations-page-subtitle">第一性原理：先选能力，再决定配置和启用。</p>
+      </div>
+      <div class="hero-actions">
+        <span id="integration-last-updated" class="text-sm muted">最后刷新：--</span>
+        <select id="lang-switch" class="btn btn-secondary btn-sm lang-switch" aria-label="语言切换">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+        <button id="refresh-integrations-btn" class="btn btn-secondary" type="button">刷新能力状态</button>
+        <a id="back-dashboard-btn" class="btn btn-primary" href="/dashboard">返回 Dashboard</a>
+      </div>
+    </header>
+
+    <section class="metric-row">
+      <article class="metric-card">
+        <div class="metric-label" id="metric-enabled-title">已启用能力</div>
+        <div class="metric-value" id="metric-enabled-value">0</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label" id="metric-mcp-title">MCP Servers</div>
+        <div class="metric-value" id="metric-mcp-value">0</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label" id="metric-skill-title">Skills</div>
+        <div class="metric-value" id="metric-skill-value">0</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label" id="metric-pending-title">待补齐配置</div>
+        <div class="metric-value" id="metric-pending-value">0</div>
+      </article>
+    </section>
+
+    <section class="card workbench-card">
+      <div class="workbench-grid">
+        <article class="workbench-panel">
+          <h2 id="quick-nl-title">自然语言快速配置</h2>
+          <p class="muted text-sm" id="quick-nl-hint">示例：启用 github mcp 和 gh-fix-ci skill。</p>
+          <form id="integration-form" class="nl-form">
+            <input type="text" id="integration-text" name="integration_text"
+              placeholder="e.g. 启用 github mcp 和 playwright mcp, 启用 gh-fix-ci skill" required />
+            <button type="submit" class="btn btn-secondary btn-sm" id="integration-apply-btn">应用</button>
+          </form>
+          <p id="integration-result" class="status-msg" role="status" aria-live="polite">等待配置</p>
+        </article>
+
+        <details class="workbench-panel custom-panel" id="custom-mcp-panel">
+          <summary id="custom-provider-title">新增自定义 MCP Server</summary>
+          <form id="custom-provider-form" class="integration-form mt-3">
+            <div class="form-grid">
+              <label>
+                Server ID
+                <input type="text" name="server" placeholder="e.g. github-enterprise" required />
+              </label>
+              <label>
+                显示名称
+                <input type="text" name="display_name" placeholder="e.g. GitHub Enterprise MCP" />
+              </label>
+              <label>
+                Transport
+                <select name="transport">
+                  <option value="stdio" selected>stdio</option>
+                  <option value="http">http</option>
+                </select>
+              </label>
+              <label>
+                Command (stdio) / Endpoint (http)
+                <input type="text" name="entry" placeholder="npx -y @modelcontextprotocol/server-github" />
+              </label>
+              <label>
+                Auth Env (可选)
+                <input type="text" name="auth_env" placeholder="e.g. GITHUB_TOKEN" />
+              </label>
+              <label class="full-width">
+                描述
+                <input type="text" name="description" placeholder="用途说明" />
+              </label>
+            </div>
+            <div class="item-actions mt-3">
+              <button type="submit" class="btn btn-primary" id="custom-provider-submit-btn">保存 MCP 配置</button>
+            </div>
+          </form>
+          <p id="custom-provider-result" class="status-msg" role="status" aria-live="polite">等待操作</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="card browser-card">
+      <div class="browser-head">
+        <h2 id="capability-browser-title">能力列表</h2>
+        <div class="filter-tabs" role="tablist" aria-label="Capability Type">
+          <button type="button" class="tab-btn is-active" data-filter="all" id="tab-all">全部</button>
+          <button type="button" class="tab-btn" data-filter="mcp" id="tab-mcp">MCP</button>
+          <button type="button" class="tab-btn" data-filter="skill" id="tab-skill">Skill</button>
+        </div>
+      </div>
+
+      <div class="browser-tools">
+        <input id="capability-search" type="search" placeholder="搜索 capability id / 名称 / 描述" />
+        <label class="check-item">
+          <input id="only-enabled" type="checkbox" />
+          <span id="only-enabled-label">只看已启用</span>
+        </label>
+        <label class="check-item">
+          <input id="only-needs-config" type="checkbox" />
+          <span id="only-needs-config-label">只看待配置</span>
+        </label>
+      </div>
+
+      <p id="capability-empty" class="muted text-sm hidden">当前筛选条件下没有能力项。</p>
+      <div id="capability-grid" class="capability-grid"></div>
+    </section>
+  </main>
+
+  <script src="/ui/integrations.js" defer></script>
 </body>
 
 </html>

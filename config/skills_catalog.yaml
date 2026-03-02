@@ -1,0 +1,160 @@
+# Steward 数据源技能目录
+# 用户在安装/Dashboard 中可选择启用的 MCP Server 和内置数据源
+# 每个 skill 定义：名称、描述、类型（builtin/mcp）、安装方式、所需配置
+
+skills:
+  # ── 内置数据源（直连 API，无需额外进程） ────────────
+
+  - id: github
+    name: GitHub
+    description: 拉取你的 GitHub 通知、Issue、PR，自动跟进与评论
+    type: builtin
+    category: code
+    icon: 🐙
+    config_keys:
+      - key: STEWARD_GITHUB_TOKEN
+        label: GitHub Personal Access Token
+        required: true
+        hint: "https://github.com/settings/tokens → 勾选 repo、notifications"
+      - key: STEWARD_GITHUB_REPOS
+        label: 监控的仓库列表
+        required: false
+        hint: "逗号分隔，如 owner/repo1,owner/repo2"
+
+  - id: email
+    name: 邮箱 (IMAP)
+    description: 通过 IMAP 拉取未读邮件，支持 Gmail / Outlook / 任意 IMAP 邮箱
+    type: builtin
+    category: communication
+    icon: 📧
+    config_keys:
+      - key: STEWARD_IMAP_HOST
+        label: IMAP 服务器地址
+        required: true
+        hint: "Gmail: imap.gmail.com / Outlook: outlook.office365.com"
+      - key: STEWARD_IMAP_USER
+        label: 邮箱地址
+        required: true
+      - key: STEWARD_IMAP_PASSWORD
+        label: 邮箱密码或 App Password
+        required: true
+        secret: true
+        hint: "Gmail 需使用应用专用密码 https://myaccount.google.com/apppasswords"
+
+  - id: calendar
+    name: 日历 (CalDAV)
+    description: 通过 CalDAV 拉取日程，支持 iCloud / Google / 自建日历
+    type: builtin
+    category: productivity
+    icon: 📅
+    config_keys:
+      - key: STEWARD_CALDAV_URL
+        label: CalDAV 服务器 URL
+        required: true
+        hint: "iCloud: https://caldav.icloud.com/ / Google Calendar 建议用 Webhook"
+      - key: STEWARD_CALDAV_USER
+        label: 用户名
+        required: true
+      - key: STEWARD_CALDAV_PASSWORD
+        label: 密码
+        required: true
+        secret: true
+
+  - id: screen
+    name: 屏幕传感器
+    description: 监控前台窗口变化，自动识别你当前在做什么
+    type: builtin
+    category: context
+    icon: 🖥️
+    config_keys:
+      - key: STEWARD_SCREEN_SENSOR_INTERVAL_SECONDS
+        label: 采集间隔（秒）
+        required: false
+        hint: "默认 8 秒"
+    install_note: "启动命令：steward-screen-sensor（需另开终端）"
+
+  # ── MCP 数据源（需启动外部 MCP Server 进程） ────────
+
+  - id: mcp-github
+    name: GitHub MCP Server
+    description: 通过 MCP 协议接入 GitHub，功能比内置更丰富（代码搜索、文件读写等）
+    type: mcp
+    category: code
+    icon: 🔌
+    install_command: "npx -y @modelcontextprotocol/server-github"
+    config_keys:
+      - key: GITHUB_PERSONAL_ACCESS_TOKEN
+        label: GitHub Token
+        required: true
+    mcp_config:
+      transport: stdio
+
+  - id: mcp-filesystem
+    name: 本地文件系统 MCP
+    description: 让 Steward 读写你指定目录下的文件
+    type: mcp
+    category: productivity
+    icon: 📂
+    install_command: "npx -y @modelcontextprotocol/server-filesystem"
+    config_keys:
+      - key: MCP_FS_ALLOWED_DIRS
+        label: 允许访问的目录
+        required: true
+        hint: "绝对路径，逗号分隔"
+    mcp_config:
+      transport: stdio
+
+  - id: mcp-slack
+    name: Slack MCP Server
+    description: 通过 MCP 协议接入 Slack 工作区
+    type: mcp
+    category: communication
+    icon: 💬
+    install_command: "npx -y @modelcontextprotocol/server-slack"
+    config_keys:
+      - key: SLACK_BOT_TOKEN
+        label: Slack Bot Token
+        required: true
+        hint: "xoxb-开头的 Bot User OAuth Token"
+      - key: SLACK_TEAM_ID
+        label: Slack Team ID
+        required: true
+    mcp_config:
+      transport: stdio
+
+  - id: mcp-notion
+    name: Notion MCP Server
+    description: 读取和搜索你的 Notion 工作区
+    type: mcp
+    category: productivity
+    icon: 📝
+    install_command: "npx -y @notionhq/notion-mcp-server"
+    config_keys:
+      - key: OPENAPI_MCP_HEADERS
+        label: "Notion API Token (格式: Authorization: Bearer ntn_xxx)"
+        required: true
+    mcp_config:
+      transport: stdio
+
+  - id: mcp-brave-search
+    name: Brave 搜索 MCP
+    description: 让 Steward 具备网络搜索能力
+    type: mcp
+    category: search
+    icon: 🔍
+    install_command: "npx -y @modelcontextprotocol/server-brave-search"
+    config_keys:
+      - key: BRAVE_API_KEY
+        label: Brave Search API Key
+        required: true
+        hint: "https://brave.com/search/api/"
+    mcp_config:
+      transport: stdio
+
+# ── 分类定义 ──
+categories:
+  code: 代码与仓库
+  communication: 通讯与邮件
+  productivity: 生产力工具
+  context: 上下文感知
+  search: 搜索与信息

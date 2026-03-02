@@ -1,16 +1,18 @@
-// I18n Data
 const i18n = {
   zh: {
     title: "Steward Brief Hub",
     subtitle: "把高频噪音交给系统，把决策时间留给你。",
+    language_switch: "语言切换",
     last_updated: "最后刷新：",
     btn_integrations: "信息源管理",
     btn_refresh: "立即刷新",
+    btn_send: "发送",
     connectors: "连接器健康",
     tell_steward: "告诉 Steward (Cmd/Ctrl + K)",
+    input_hint: "Enter 提交，Shift+Enter 换行。使用 Cmd/Ctrl + K 快速聚焦。",
     placeholder: "描述你当前要处理的真实事项。按 Enter 提交，Shift+Enter 换行",
-    btn_send: "发送",
     latest_brief: "最新简报",
+    brief_view_now: "立即查看简报",
     brief_loading: "正在生成简报...",
     brief_frequency: "频率",
     brief_content_level: "内容层级",
@@ -18,12 +20,11 @@ const i18n = {
     brief_saved: "简报设置已更新",
     brief_save_failed: "简报设置更新失败",
     brief_waiting: "等待设置",
+    brief_load_failed: "简报加载失败",
     level_simple: "简单",
     level_medium: "中等",
     level_rich: "丰富",
     runtime_logs: "运行日志",
-    integrations_title: "信息源管理",
-    integrations_subtitle: "配置外部信息源，扩充上下文边界",
     pending_plans: "待确认计划",
     conflicts: "冲突工单",
     waiting_input: "等待输入",
@@ -34,25 +35,42 @@ const i18n = {
     no_connectors: "暂无连接器状态",
     btn_confirm: "确认执行",
     btn_reject: "拒绝计划",
-    test_success: "测试成功",
-    test_failed: "测试失败",
-    nl_config: "自然语言快速配置",
-    btn_apply: "应用",
     kpi_decisions: "决策总数",
     kpi_waiting: "等待中",
-    kpi_running: "执行中"
+    kpi_running: "执行中",
+    kpi_total: "计划总量",
+    kpi_queue: "队列深度",
+    status_ok: "正常",
+    status_err: "异常",
+    shortcut_hint: "[Y/N]",
+    plan_label: "计划 {id}",
+    plan_action_failed: "计划操作失败",
+    event_submitting: "提交中...",
+    event_submit_success: "已触发动作，计划：{id}",
+    event_submit_failed: "提交事件失败",
+    loading: "加载中...",
+    conflict_action_label: "建议动作",
+    conflict_relation: "{a} vs {b}",
+    log_kind_default: "日志",
+    notify_pending_title: "Steward 待确认",
+    notify_pending_body: "新增 {count} 个待确认计划",
+    notify_conflict_title: "Steward 冲突提醒",
+    notify_conflict_body: "新增 {count} 个冲突工单",
   },
   en: {
     title: "Steward Brief Hub",
     subtitle: "Focus on decisions. Leave the noise to the system.",
-    last_updated: "Last updated: ",
+    language_switch: "Language switch",
+    last_updated: "Last updated:",
     btn_integrations: "Integrations",
     btn_refresh: "Refresh Now",
+    btn_send: "Send",
     connectors: "Connector Health",
     tell_steward: "Tell Steward (Cmd/Ctrl + K)",
+    input_hint: "Press Enter to submit, Shift+Enter for new line. Use Cmd/Ctrl + K to focus quickly.",
     placeholder: "Describe the task you want to handle. Press Enter to submit, Shift+Enter for new line.",
-    btn_send: "Send",
     latest_brief: "Latest Brief",
+    brief_view_now: "View Brief Now",
     brief_loading: "Generating brief...",
     brief_frequency: "Frequency",
     brief_content_level: "Detail Level",
@@ -60,12 +78,11 @@ const i18n = {
     brief_saved: "Brief settings updated",
     brief_save_failed: "Failed to update brief settings",
     brief_waiting: "Waiting for settings",
+    brief_load_failed: "Failed to load brief",
     level_simple: "Simple",
     level_medium: "Medium",
     level_rich: "Rich",
     runtime_logs: "Runtime Logs",
-    integrations_title: "Integrations Management",
-    integrations_subtitle: "Configure external sources to expand context boundaries.",
     pending_plans: "Pending Clearances",
     conflicts: "Open Conflicts",
     waiting_input: "Waiting for input...",
@@ -76,58 +93,73 @@ const i18n = {
     no_connectors: "No connector status.",
     btn_confirm: "Confirm",
     btn_reject: "Reject",
-    test_success: "Test succeeded",
-    test_failed: "Test failed",
-    nl_config: "Quick NL Config",
-    btn_apply: "Apply",
     kpi_decisions: "Decisions",
     kpi_waiting: "Waiting",
-    kpi_running: "Running"
-  }
+    kpi_running: "Running",
+    kpi_total: "Total Plans",
+    kpi_queue: "Queue Depth",
+    status_ok: "OK",
+    status_err: "ERR",
+    shortcut_hint: "[Y/N]",
+    plan_label: "Plan {id}",
+    plan_action_failed: "Failed to update plan",
+    event_submitting: "Submitting...",
+    event_submit_success: "Action triggered, plan: {id}",
+    event_submit_failed: "Error submitting event.",
+    loading: "Loading...",
+    conflict_action_label: "Action",
+    conflict_relation: "{a} vs {b}",
+    log_kind_default: "log",
+    notify_pending_title: "Steward Clearance Required",
+    notify_pending_body: "{count} new plans waiting",
+    notify_conflict_title: "Steward Conflict",
+    notify_conflict_body: "{count} new conflicts detected",
+  },
 };
 
-let currentLang = localStorage.getItem('steward_lang') || 'zh';
+let currentLang = localStorage.getItem("steward_lang") || "zh";
 
-function t(key) {
-  return i18n[currentLang][key] || key;
+function t(key, vars = {}) {
+  const table = i18n[currentLang] || i18n.zh;
+  const template = table[key] || key;
+  return template.replace(/\{(\w+)\}/g, (_, token) => {
+    const value = vars[token];
+    return value === undefined || value === null ? "" : String(value);
+  });
 }
 
-function applyI18n() {
-  document.querySelector('.hero-content h1').textContent = t('title');
-  document.querySelector('.hero-content p').textContent = t('subtitle');
-  document.getElementById('open-integrations-btn').textContent = t('btn_integrations');
-  document.getElementById('refresh-btn').textContent = t('btn_refresh');
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
-  const headers = document.querySelectorAll('article h2');
-  if (headers.length >= 5) {
-    headers[0].nextElementSibling.id === 'pending-badge' && (headers[0].textContent = t('pending_plans'));
-    headers[1].nextElementSibling.id === 'conflict-badge' && (headers[1].textContent = t('conflicts'));
-    headers[2].textContent = t('connectors');
-    headers[3].textContent = t('tell_steward');
-    headers[4].textContent = t('latest_brief');
-    headers[5] && (headers[5].textContent = t('runtime_logs'));
+function sanitizeMarkdownForRendering(markdownText) {
+  return String(markdownText ?? "")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function isEditableTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
   }
-
-  document.getElementById('event-input').placeholder = t('placeholder');
-  document.querySelector('#event-form .btn-primary').textContent = t('btn_send');
-  document.querySelector('.drawer-header h2').textContent = t('integrations_title');
-  document.querySelector('.drawer-header p').textContent = t('integrations_subtitle');
-  document.querySelector('.quick-nl-config label').textContent = t('nl_config');
-  document.querySelector('.quick-nl-config .btn').textContent = t('btn_apply');
-  document.getElementById('brief-frequency-label').textContent = t('brief_frequency');
-  document.getElementById('brief-content-level-label').textContent = t('brief_content_level');
-  document.getElementById('brief-settings-save-btn').textContent = t('brief_save');
-  document.querySelector('#brief-content-level option[value="simple"]').textContent = t('level_simple');
-  document.querySelector('#brief-content-level option[value="medium"]').textContent = t('level_medium');
-  document.querySelector('#brief-content-level option[value="rich"]').textContent = t('level_rich');
+  const tag = target.tagName;
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    target.isContentEditable
+  );
 }
 
-// Ensure marked.js is available
-if (typeof marked === 'undefined') {
+if (typeof marked === "undefined") {
   console.warn("marked.js failed to load. Falling back to plain text.");
 }
 
-// Core Elements
 const refreshBtn = document.getElementById("refresh-btn");
 const lastUpdatedEl = document.getElementById("last-updated");
 const kpiCardsEl = document.getElementById("kpi-cards");
@@ -137,6 +169,7 @@ const pendingBadgeEl = document.getElementById("pending-badge");
 const conflictListEl = document.getElementById("conflict-list");
 const conflictBadgeEl = document.getElementById("conflict-badge");
 const briefMarkdownEl = document.getElementById("brief-markdown");
+const briefViewBtn = document.getElementById("brief-view-btn");
 const briefFrequencyEl = document.getElementById("brief-frequency-hours");
 const briefContentLevelEl = document.getElementById("brief-content-level");
 const briefSettingsSaveBtn = document.getElementById("brief-settings-save-btn");
@@ -145,117 +178,142 @@ const runtimeLogsEl = document.getElementById("runtime-logs");
 const eventFormEl = document.getElementById("event-form");
 const eventInputEl = document.getElementById("event-input");
 const eventResultEl = document.getElementById("event-result");
+const eventSubmitBtn = eventFormEl.querySelector("button[type='submit']");
+const eventInputHintEl = document.getElementById("event-input-hint");
 
-// Drawer Elements
-const overlayEl = document.getElementById("integrations-overlay");
 const openDrawerBtn = document.getElementById("open-integrations-btn");
-const closeDrawerBtn = document.getElementById("close-integrations-btn");
 const langSwitchEl = document.getElementById("lang-switch");
 
 let hasInitializedSnapshot = false;
 let lastPendingPlanIds = new Set();
 let lastConflictIds = new Set();
 let briefSettingsLoaded = false;
+let refreshInFlight = false;
+let briefRequestId = 0;
 
-// --- Init ---
-langSwitchEl.value = currentLang;
-langSwitchEl.addEventListener('change', (e) => {
-  currentLang = e.target.value;
-  localStorage.setItem('steward_lang', currentLang);
-  applyI18n();
-  refreshAll();
-});
-applyI18n();
+function applyI18n() {
+  document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
 
-// --- Formatting ---
+  document.querySelector(".hero-content h1").textContent = t("title");
+  document.querySelector(".hero-content p").textContent = t("subtitle");
+  document.getElementById("pending-title").textContent = t("pending_plans");
+  document.getElementById("conflict-title").textContent = t("conflicts");
+  document.getElementById("connectors-title").textContent = t("connectors");
+  document.getElementById("tell-title").textContent = t("tell_steward");
+  document.getElementById("brief-title").textContent = t("latest_brief");
+  briefViewBtn.textContent = t("brief_view_now");
+  document.getElementById("logs-title").textContent = t("runtime_logs");
+
+  openDrawerBtn.textContent = t("btn_integrations");
+  refreshBtn.textContent = t("btn_refresh");
+  eventSubmitBtn.textContent = t("btn_send");
+  briefSettingsSaveBtn.textContent = t("brief_save");
+  langSwitchEl.setAttribute("aria-label", t("language_switch"));
+
+  eventInputEl.placeholder = t("placeholder");
+  eventInputHintEl.textContent = t("input_hint");
+  document.getElementById("brief-frequency-label").textContent = t("brief_frequency");
+  document.getElementById("brief-content-level-label").textContent = t("brief_content_level");
+  document.querySelector('#brief-content-level option[value="simple"]').textContent = t("level_simple");
+  document.querySelector('#brief-content-level option[value="medium"]').textContent = t("level_medium");
+  document.querySelector('#brief-content-level option[value="rich"]').textContent = t("level_rich");
+
+  lastUpdatedEl.textContent = `${t("last_updated")} --`;
+  if (!eventResultEl.textContent.trim()) {
+    eventResultEl.textContent = t("waiting_input");
+  }
+}
+
 function fmtNow() {
-  return new Date().toLocaleTimeString(currentLang === 'zh' ? 'zh-CN' : 'en-US', { hour12: false });
+  return new Date().toLocaleTimeString(currentLang === "zh" ? "zh-CN" : "en-US", { hour12: false });
 }
 
-// --- Drawer Logic ---
-openDrawerBtn.addEventListener('click', () => {
-  overlayEl.classList.remove('hidden');
-  document.body.style.overflow = 'hidden'; // prevent background scrolling
-  if (typeof refreshProviders === 'function') refreshProviders();
+eventInputEl.addEventListener("input", function onInput() {
+  this.style.height = "auto";
+  this.style.height = `${this.scrollHeight}px`;
 });
 
-function closeDrawer() {
-  overlayEl.classList.add('hidden');
-  document.body.style.overflow = '';
-}
-
-closeDrawerBtn.addEventListener('click', closeDrawer);
-overlayEl.addEventListener('click', (e) => {
-  if (e.target === overlayEl) closeDrawer();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !overlayEl.classList.contains('hidden')) {
-    closeDrawer();
-  }
-});
-
-// --- UI Utilities ---
-// Auto-resizing textarea
-eventInputEl.addEventListener('input', function () {
-  this.style.height = 'auto';
-  this.style.height = (this.scrollHeight) + 'px';
-});
-
-// Enter to submit (Shift+Enter for newline)
-eventInputEl.addEventListener('keydown', function (e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    if (this.value.trim()) eventFormEl.dispatchEvent(new Event('submit'));
-  }
-});
-
-// Global Keyboard Shortcut: Cmd/Ctrl + K to focus input
-document.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-    e.preventDefault();
-    eventInputEl.focus();
-  }
-
-  // Y/N shortcuts for the first pending plan
-  if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && overlayEl.classList.contains('hidden')) {
-    const firstPendingBtnGroup = pendingListEl.querySelector('.list-item .item-actions');
-    if (firstPendingBtnGroup) {
-      if (e.key.toLowerCase() === 'y') {
-        const confirmBtn = firstPendingBtnGroup.querySelector('.confirm');
-        if (confirmBtn) confirmBtn.click();
-      } else if (e.key.toLowerCase() === 'n') {
-        const rejectBtn = firstPendingBtnGroup.querySelector('.reject');
-        if (rejectBtn) rejectBtn.click();
-      }
+eventInputEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    if (eventInputEl.value.trim()) {
+      eventFormEl.requestSubmit();
     }
   }
 });
 
-// --- Notifications ---
-async function ensureNotificationPermission() {
-  if (!("Notification" in window)) return;
-  if (Notification.permission === "default") {
-    try { await Notification.requestPermission(); } catch (e) { }
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    eventInputEl.focus();
+    return;
   }
+
+  if (!isEditableTarget(event.target)) {
+    const firstPendingBtnGroup = pendingListEl.querySelector(".list-item .item-actions");
+    if (!firstPendingBtnGroup) {
+      return;
+    }
+
+    const key = event.key.toLowerCase();
+    if (key === "y") {
+      firstPendingBtnGroup.querySelector(".confirm")?.click();
+    } else if (key === "n") {
+      firstPendingBtnGroup.querySelector(".reject")?.click();
+    }
+  }
+});
+
+function attachNotificationPermissionOnFirstIntent() {
+  if (!("Notification" in window) || Notification.permission !== "default") {
+    return;
+  }
+
+  const handler = async () => {
+    try {
+      await Notification.requestPermission();
+    } catch (_) {
+      // ignore
+    }
+  };
+
+  ["click", "keydown", "touchstart"].forEach((eventName) => {
+    document.addEventListener(eventName, handler, { once: true, passive: true });
+  });
 }
 
 function notifyBrowser(title, body) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
-  try { new Notification(title, { body }); } catch (e) { }
+  if (!("Notification" in window) || Notification.permission !== "granted") {
+    return;
+  }
+  try {
+    new Notification(title, { body });
+  } catch (_) {
+    // ignore
+  }
+}
+
+async function fetchApi(path) {
+  const response = await fetch(path);
+  if (!response.ok) {
+    throw new Error(`HTTP error ${response.status}`);
+  }
+  return response.json();
 }
 
 async function refreshBriefSettings(force = false) {
-  if (briefSettingsLoaded && !force) return;
+  if (briefSettingsLoaded && !force) {
+    return;
+  }
+
   try {
     const data = await fetchApi("/api/v1/briefs/settings");
-    const frequency = String(data?.frequency_hours || "4");
-    const level = data?.content_level || "medium";
-    briefFrequencyEl.value = frequency;
-    briefContentLevelEl.value = level;
-    briefSettingsStatusEl.textContent = t('brief_waiting');
+    briefFrequencyEl.value = String(data?.frequency_hours || "4");
+    briefContentLevelEl.value = data?.content_level || "medium";
+    briefSettingsStatusEl.textContent = t("brief_waiting");
     briefSettingsLoaded = true;
-  } catch (e) {
-    briefSettingsStatusEl.textContent = t('brief_save_failed');
+  } catch (_) {
+    briefSettingsStatusEl.textContent = t("brief_save_failed");
   }
 }
 
@@ -263,7 +321,8 @@ async function saveBriefSettings() {
   const frequencyHours = Number(briefFrequencyEl.value || 4);
   const contentLevel = String(briefContentLevelEl.value || "medium");
   briefSettingsSaveBtn.disabled = true;
-  briefSettingsStatusEl.textContent = "...";
+  briefSettingsStatusEl.textContent = t("loading");
+
   try {
     const response = await fetch("/api/v1/briefs/settings", {
       method: "PUT",
@@ -273,159 +332,240 @@ async function saveBriefSettings() {
         content_level: contentLevel,
       }),
     });
-    if (!response.ok) throw new Error("save_failed");
+    if (!response.ok) {
+      throw new Error("save_failed");
+    }
+
     const data = await response.json();
     briefFrequencyEl.value = String(data?.frequency_hours || frequencyHours);
     briefContentLevelEl.value = String(data?.content_level || contentLevel);
-    briefSettingsStatusEl.textContent = t('brief_saved');
+    briefSettingsStatusEl.textContent = t("brief_saved");
     briefSettingsLoaded = true;
     await refreshAll();
-  } catch (e) {
-    briefSettingsStatusEl.textContent = t('brief_save_failed');
+  } catch (_) {
+    briefSettingsStatusEl.textContent = t("brief_save_failed");
   } finally {
     briefSettingsSaveBtn.disabled = false;
   }
 }
 
-// --- Renderers ---
 function renderKpis(overview) {
   const entries = [
-    [t('pending_plans'), overview.plans_total ?? 0],
-    [t('kpi_decisions'), overview.decisions_total ?? 0],
-    [t('kpi_waiting'), overview.plans_waiting ?? 0],
-    [t('kpi_running'), overview.plans_running ?? 0],
+    [t("kpi_total"), overview?.plans_total ?? 0],
+    [t("kpi_decisions"), overview?.decisions_total ?? 0],
+    [t("kpi_waiting"), overview?.plans_waiting ?? 0],
+    [t("kpi_running"), overview?.plans_running ?? 0],
+    [t("kpi_queue"), overview?.queue_depth ?? 0],
   ];
 
-  kpiCardsEl.innerHTML = entries.map(([label, value]) => `
-      <div class="kpi">
-        <div class="label">${label}</div>
-        <div class="value">${value}</div>
-      </div>
-    `).join("");
+  kpiCardsEl.innerHTML = entries
+    .map(([label, value]) => {
+      const safeLabel = escapeHtml(label);
+      const safeValue = escapeHtml(value);
+      return `
+        <div class="kpi">
+          <div class="label">${safeLabel}</div>
+          <div class="value">${safeValue}</div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function renderConnectorHealth(items) {
-  if (!items.length) {
-    connectorHealthEl.innerHTML = `<p class="muted text-sm">${t('no_connectors')}</p>`;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    connectorHealthEl.innerHTML = `<p class="muted text-sm">${escapeHtml(t("no_connectors"))}</p>`;
     return;
   }
-  connectorHealthEl.innerHTML = items.map(item => {
-    const klass = item.healthy ? "health-ok" : "health-bad";
-    const status = item.healthy ? "OK" : "ERR";
-    return `
+
+  connectorHealthEl.innerHTML = list
+    .map((item) => {
+      const klass = item?.healthy ? "health-ok" : "health-bad";
+      const status = item?.healthy ? t("status_ok") : t("status_err");
+      const name = escapeHtml(item?.name || "-");
+      const code = item?.code ? ` (${escapeHtml(item.code)})` : "";
+      return `
         <div class="health-chip ${klass}">
-          <div class="item-title text-sm">${item.name}</div>
-          <div class="item-meta" style="margin:0; font-size:0.75rem">${status} ${item.code ? `(${item.code})` : ''}</div>
+          <div class="item-title text-sm">${name}</div>
+          <div class="item-meta health-meta">${escapeHtml(status)}${code}</div>
         </div>
       `;
-  }).join("");
+    })
+    .join("");
 }
 
 async function handlePlanAction(planId, action) {
-  const response = await fetch(`/api/v1/plans/${planId}/${action}`, { method: "POST" });
-  if (!response.ok) throw new Error(`Action ${action} failed`);
+  const response = await fetch(`/api/v1/plans/${encodeURIComponent(planId)}/${encodeURIComponent(action)}`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(t("plan_action_failed"));
+  }
 }
 
 function renderPending(items) {
-  pendingBadgeEl.textContent = items.length;
-  if (!items.length) {
-    pendingListEl.innerHTML = `<p class="muted text-sm">${t('no_pending')}</p>`;
+  const list = Array.isArray(items) ? items : [];
+  pendingBadgeEl.textContent = String(list.length);
+
+  if (!list.length) {
+    pendingListEl.innerHTML = `<p class="muted text-sm">${escapeHtml(t("no_pending"))}</p>`;
     return;
   }
 
-  // Highlight the first one to signify keyboard shortcut availability
-  pendingListEl.innerHTML = items.map((item, idx) => `
-      <div class="list-item" style="${idx === 0 ? 'border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary-soft);' : ''}" data-plan-id="${item.plan_id}">
-        <div style="display:flex; justify-content:space-between;">
-            <div class="item-title">Plan ${item.plan_id} ${idx === 0 ? '<span class="badge" style="background:var(--primary-soft); color:#fff; margin-left:8px; font-size:0.7rem;">[Y/N]</span>' : ''}</div>
-            <div class="badge ${item.risk_level === 'high' ? 'danger-badge' : ''}">${item.risk_level}</div>
+  pendingListEl.innerHTML = list
+    .map((item, idx) => {
+      const planIdText = String(item?.plan_id || "-");
+      const planId = encodeURIComponent(planIdText);
+      const riskLevel = String(item?.risk_level || "unknown");
+      const intent = escapeHtml(item?.intent || "-");
+      const state = escapeHtml(item?.state || "-");
+      const executionStatus = escapeHtml(item?.execution_status || "pending_confirmation");
+      const summary = escapeHtml(item?.human_summary || "...");
+      const primaryClass = idx === 0 ? " primary-item" : "";
+      const riskBadge = riskLevel.toLowerCase() === "high" ? "danger-badge" : "";
+      const shortcut = idx === 0 ? `<span class="badge shortcut-badge">${escapeHtml(t("shortcut_hint"))}</span>` : "";
+      return `
+        <div class="list-item${primaryClass}" data-plan-id="${planId}">
+          <div class="item-head">
+            <div class="item-title">${escapeHtml(t("plan_label", { id: planIdText }))} ${shortcut}</div>
+            <div class="badge ${riskBadge}">${escapeHtml(riskLevel)}</div>
+          </div>
+          <div class="item-meta">${intent} &middot; ${state} &middot; ${executionStatus}</div>
+          <div class="item-summary">${summary}</div>
+          <div class="item-actions">
+            <button type="button" class="btn btn-sm confirm" data-action="confirm">${escapeHtml(t("btn_confirm"))}</button>
+            <button type="button" class="btn btn-sm reject" data-action="reject">${escapeHtml(t("btn_reject"))}</button>
+          </div>
         </div>
-        <div class="item-meta">${item.intent} &middot; ${item.state}</div>
-        <div class="item-summary">${item.human_summary || "..."}</div>
-        <div class="item-actions">
-          <button class="btn btn-sm confirm" data-action="confirm">${t('btn_confirm')}</button>
-          <button class="btn btn-sm reject" data-action="reject">${t('btn_reject')}</button>
-        </div>
-      </div>
-    `).join("");
+      `;
+    })
+    .join("");
 
-  pendingListEl.querySelectorAll("button[data-action]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const action = btn.dataset.action;
-      const planId = btn.closest(".list-item")?.dataset.planId;
-      if (!action || !planId) return;
+  pendingListEl.querySelectorAll("button[data-action]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const action = button.dataset.action;
+      const encodedPlanId = button.closest(".list-item")?.dataset.planId;
+      if (!action || !encodedPlanId) {
+        return;
+      }
 
-      btn.disabled = true;
+      button.disabled = true;
       try {
-        await handlePlanAction(planId, action);
+        await handlePlanAction(decodeURIComponent(encodedPlanId), action);
         await refreshAll();
       } catch (error) {
-        alert(error.message);
+        eventResultEl.textContent = error instanceof Error ? error.message : t("plan_action_failed");
+      } finally {
+        button.disabled = false;
       }
     });
   });
 }
 
 function renderConflicts(items) {
-  conflictBadgeEl.textContent = items.length;
-  if (!items.length) {
-    conflictListEl.innerHTML = `<p class="muted text-sm">${t('no_conflict')}</p>`;
+  const list = Array.isArray(items) ? items : [];
+  conflictBadgeEl.textContent = String(list.length);
+
+  if (!list.length) {
+    conflictListEl.innerHTML = `<p class="muted text-sm">${escapeHtml(t("no_conflict"))}</p>`;
     return;
   }
-  conflictListEl.innerHTML = items.map(item => `
-      <div class="list-item" style="border-left: 3px solid var(--danger);">
-        <div class="item-title">${item.conflict_id} <span class="badge danger-badge">${item.conflict_type}</span></div>
-        <div class="item-meta" style="margin-bottom:4px;">Action: ${item.resolution}</div>
-        <div class="item-meta" style="font-family:var(--font-mono); font-size:0.8rem;">${item.plan_a_id} vs ${item.plan_b_id}</div>
-      </div>
-    `).join("");
+
+  conflictListEl.innerHTML = list
+    .map((item) => {
+      const conflictId = escapeHtml(item?.conflict_id || "-");
+      const conflictType = escapeHtml(item?.conflict_type || "-");
+      const resolution = escapeHtml(item?.resolution || "-");
+      const relation = escapeHtml(
+        t("conflict_relation", {
+          a: item?.plan_a_id || "-",
+          b: item?.plan_b_id || "-",
+        })
+      );
+      return `
+        <div class="list-item conflict-item">
+          <div class="item-title">${conflictId} <span class="badge danger-badge">${conflictType}</span></div>
+          <div class="item-meta tight">${escapeHtml(t("conflict_action_label"))}: ${resolution}</div>
+          <div class="item-meta mono">${relation}</div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function maybeNotifySnapshot(snapshot) {
-  const pendingItems = snapshot.pending_confirmations || [];
-  const conflictItems = snapshot.open_conflicts || [];
-  const pendingIds = new Set(pendingItems.map(i => String(i.plan_id)));
-  const conflictIds = new Set(conflictItems.map(i => String(i.conflict_id)));
+  const pendingItems = snapshot?.pending_confirmations || [];
+  const conflictItems = snapshot?.open_conflicts || [];
+
+  const pendingIds = new Set(pendingItems.map((item) => String(item.plan_id)));
+  const conflictIds = new Set(conflictItems.map((item) => String(item.conflict_id)));
 
   if (!hasInitializedSnapshot) {
+    hasInitializedSnapshot = true;
     lastPendingPlanIds = pendingIds;
     lastConflictIds = conflictIds;
-    hasInitializedSnapshot = true;
     return;
   }
 
-  const newPending = [...pendingIds].filter(id => !lastPendingPlanIds.has(id));
-  const newConflicts = [...conflictIds].filter(id => !lastConflictIds.has(id));
+  const newPending = [...pendingIds].filter((id) => !lastPendingPlanIds.has(id));
+  const newConflicts = [...conflictIds].filter((id) => !lastConflictIds.has(id));
 
-  if (newPending.length > 0) notifyBrowser("Steward Clearance Required", `${newPending.length} new plans waiting.`);
-  if (newConflicts.length > 0) notifyBrowser("Steward Conflict", `${newConflicts.length} new conflicts detected.`);
+  if (newPending.length > 0) {
+    notifyBrowser(
+      t("notify_pending_title"),
+      t("notify_pending_body", { count: newPending.length })
+    );
+  }
+  if (newConflicts.length > 0) {
+    notifyBrowser(
+      t("notify_conflict_title"),
+      t("notify_conflict_body", { count: newConflicts.length })
+    );
+  }
 
   lastPendingPlanIds = pendingIds;
   lastConflictIds = conflictIds;
 }
 
 function renderRuntimeLogs(items) {
-  if (!items || !items.length) {
-    runtimeLogsEl.innerHTML = `<p class="muted text-sm">${t('no_logs')}</p>`;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    runtimeLogsEl.innerHTML = `<p class="muted text-sm">${escapeHtml(t("no_logs"))}</p>`;
     return;
   }
-  runtimeLogsEl.innerHTML = items.slice(0, 10).map(item => `
-      <div class="list-item" style="padding:10px;">
-        <div class="item-title text-sm">${item.title || "-"}</div>
-        <div class="item-meta" style="font-size:0.75rem; margin-bottom:4px;">${item.timestamp} &middot; ${item.kind || "log"}</div>
-        ${item.detail ? `<div class="muted text-xs" style="font-family:var(--font-mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.detail}</div>` : ''}
-      </div>
-    `).join("");
+
+  runtimeLogsEl.innerHTML = list
+    .slice(0, 10)
+    .map((item) => {
+      const title = escapeHtml(item?.title || "-");
+      const timestamp = escapeHtml(item?.timestamp || "-");
+      const kind = escapeHtml(item?.kind || t("log_kind_default"));
+      const detail = item?.detail
+        ? `<div class="muted text-xs log-detail">${escapeHtml(item.detail)}</div>`
+        : "";
+      return `
+        <div class="list-item log-item">
+          <div class="item-title text-sm">${title}</div>
+          <div class="item-meta log-meta-row">${timestamp} &middot; ${kind}</div>
+          ${detail}
+        </div>
+      `;
+    })
+    .join("");
 }
 
-async function submitEvent(evt) {
-  evt.preventDefault();
+async function submitEvent(event) {
+  event.preventDefault();
   const text = eventInputEl.value.trim();
-  if (!text) return;
+  if (!text) {
+    return;
+  }
 
-  const prevText = document.querySelector('#event-form .btn-primary').textContent;
-  document.querySelector('#event-form .btn-primary').textContent = '...';
-  document.querySelector('#event-form .btn-primary').disabled = true;
+  const prevText = eventSubmitBtn.textContent;
+  eventSubmitBtn.textContent = t("event_submitting");
+  eventSubmitBtn.disabled = true;
+  eventResultEl.textContent = t("loading");
 
   try {
     const response = await fetch("/api/v1/events/ingest-nl", {
@@ -433,222 +573,121 @@ async function submitEvent(evt) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, source_hint: "manual" }),
     });
-    if (!response.ok) throw new Error("Inject failed");
+    if (!response.ok) {
+      throw new Error("ingest_failed");
+    }
+
     const data = await response.json();
-    eventResultEl.textContent = `Action triggered! Plan: ${data.plan_id}`;
+    eventResultEl.textContent = t("event_submit_success", { id: data.plan_id });
     eventFormEl.reset();
-    eventInputEl.style.height = 'auto'; // reset height
+    eventInputEl.style.height = "auto";
     await refreshAll();
-  } catch (err) {
-    eventResultEl.textContent = "Error submitting event.";
+  } catch (_) {
+    eventResultEl.textContent = t("event_submit_failed");
   } finally {
-    document.querySelector('#event-form .btn-primary').textContent = prevText;
-    document.querySelector('#event-form .btn-primary').disabled = false;
-    setTimeout(() => eventResultEl.textContent = t('waiting_input'), 3000);
+    eventSubmitBtn.textContent = prevText;
+    eventSubmitBtn.disabled = false;
+    window.setTimeout(() => {
+      eventResultEl.textContent = t("waiting_input");
+    }, 3000);
   }
 }
 
-// --- Data Fetching ---
-async function fetchApi(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-  return res.json();
-}
-
-async function refreshAll() {
-  try {
-    await refreshBriefSettings();
-    // 1) 先加载并渲染 snapshot（快速数据库查询，不依赖 LLM）
-    const snapshot = await fetchApi("/api/v1/dashboard/snapshot").catch(() => ({}));
-    if (snapshot.overview) renderKpis(snapshot.overview);
-    if (snapshot.connector_health) renderConnectorHealth(snapshot.connector_health);
-    renderPending(snapshot.pending_confirmations || []);
-    renderConflicts(snapshot.open_conflicts || []);
-    renderRuntimeLogs(snapshot.recent_logs || []);
-    maybeNotifySnapshot(snapshot);
-    lastUpdatedEl.textContent = `${t('last_updated')} ${fmtNow()}`;
-
-    // 2) 简报异步加载（LLM 串行调用较慢），不阻塞页面渲染
-    briefMarkdownEl.innerHTML = `<span style="color:#888">⏳ ${t('brief_loading')}</span>`;
-    fetchApi("/api/v1/briefs/latest").then(brief => {
-      const briefText = brief?.markdown || "";
-      if (typeof marked !== 'undefined' && briefText) {
-        briefMarkdownEl.innerHTML = marked.parse(briefText);
-      } else {
-        briefMarkdownEl.textContent = briefText || t('no_brief');
-      }
-    }).catch(() => {
-      briefMarkdownEl.textContent = t('no_brief') || '简报加载失败';
-    });
-  } catch (e) {
-    console.error("Refresh failed", e);
-  }
-}
-
-// Listeners
-refreshBtn.addEventListener("click", refreshAll);
-eventFormEl.addEventListener("submit", submitEvent);
-briefSettingsSaveBtn.addEventListener("click", saveBriefSettings);
-
-// Init
-ensureNotificationPermission();
-refreshAll();
-setInterval(refreshAll, 15000);
-
-// --- Integrations (Drawer) Logic Appended ---
-const customProviderFormEl = document.getElementById("custom-provider-form");
-const customProviderResultEl = document.getElementById("custom-provider-result");
-const nlIntegrationFormEl = document.getElementById('integration-form');
-const nlIntegrationResultEl = document.getElementById('integration-result');
-const integrationManageListEl = document.getElementById("integration-manage-list");
-const integrationLastUpdatedEl = document.getElementById("integration-last-updated");
-
-function builtinFields(provider) {
-  if (provider === "slack") {
-    return [{ key: "slack_signing_secret", label: "Slack signing secret", type: "password" }];
-  }
-  if (provider === "gmail") {
-    return [
-      { key: "gmail_pubsub_verification_token", label: "Gmail verification token", type: "password" },
-      { key: "gmail_pubsub_topic", label: "Gmail topic", type: "text" },
-    ];
-  }
-  if (provider === "google-calendar") {
-    return [
-      { key: "google_calendar_channel_token", label: "Calendar channel token", type: "password" },
-      { key: "google_calendar_channel_ids", label: "Calendar channel ids (, separated)", type: "text" },
-    ];
-  }
-  if (provider === "screen") {
-    return [{ key: "screen_webhook_secret", label: "Screen webhook secret", type: "password" }];
-  }
-  return [];
-}
-
-function fieldTemplate(field) {
-  return `
-    <label>
-      ${field.label}
-      <input class="input-sm" type="${field.type}" name="${field.key}" />
-    </label>
-  `;
-}
-
-function renderProviders(items) {
-  if (!items || !items.length) {
-    integrationManageListEl.innerHTML = `<p class="muted text-sm">${t('no_connectors')}</p>`;
+function renderBriefMarkdown(briefText) {
+  if (!briefText) {
+    briefMarkdownEl.textContent = t("no_brief");
     return;
   }
 
-  integrationManageListEl.innerHTML = items.map((item) => {
-    const displayName = item.display_name || item.provider;
-    let fields = [];
-    if (item.provider_type !== "custom") {
-      fields = builtinFields(item.provider);
+  if (typeof marked === "undefined") {
+    briefMarkdownEl.textContent = briefText;
+    return;
+  }
+
+  try {
+    const safeMarkdown = sanitizeMarkdownForRendering(briefText);
+    briefMarkdownEl.innerHTML = marked.parse(safeMarkdown);
+  } catch (_) {
+    briefMarkdownEl.textContent = briefText;
+  }
+}
+
+async function refreshLatestBrief() {
+  const currentBriefRequest = ++briefRequestId;
+  briefMarkdownEl.innerHTML = `<span class="loading-hint">⏳ ${escapeHtml(t("brief_loading"))}</span>`;
+  try {
+    const brief = await fetchApi("/api/v1/briefs/latest");
+    if (currentBriefRequest !== briefRequestId) {
+      return;
     }
-    const formFields = fields.map(f => fieldTemplate(f)).join("");
-    const status = item.configured ? "Ready" : `Missing: ${(item.missing_fields || []).join(", ") || "config"}`;
-
-    return `
-      <div class="list-item" data-provider="${item.provider}">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div class="item-title">${displayName}</div>
-          <div class="badge ${item.configured ? 'health-ok' : 'danger-badge'}">${status}</div>
-        </div>
-        <div class="muted text-xs mb-2">id: ${item.provider} | type: ${item.provider_type}</div>
-        
-        <form class="provider-config-form mt-3" data-provider="${item.provider}">
-          <div class="form-grid">${formFields}</div>
-          <div class="item-actions mt-3">
-            <button type="submit" class="btn btn-sm btn-primary">Save Config</button>
-            <button type="button" class="btn btn-sm btn-secondary test-btn" data-provider="${item.provider}">Run Test</button>
-          </div>
-        </form>
-        <p class="status-msg provider-result" data-provider-result="${item.provider}"></p>
-      </div>
-    `;
-  }).join("");
-
-  integrationManageListEl.querySelectorAll("form.provider-config-form").forEach((form) => {
-    form.addEventListener("submit", async (evt) => {
-      evt.preventDefault();
-      const provider = form.dataset.provider;
-      const body = {};
-      new FormData(form).forEach((val, key) => { if (val.trim()) body[key] = val.trim(); });
-
-      const resultEl = integrationManageListEl.querySelector(`[data-provider-result="${provider}"]`);
-      try {
-        await fetch(`/api/v1/integrations/${provider}/configure`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-        });
-        resultEl.textContent = "Saved.";
-        refreshProviders();
-      } catch (e) {
-        resultEl.textContent = "Failed to save.";
-      }
-    });
-  });
-
-  integrationManageListEl.querySelectorAll("button.test-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const provider = btn.dataset.provider;
-      const resultEl = integrationManageListEl.querySelector(`[data-provider-result="${provider}"]`);
-      try {
-        const res = await fetch(`/api/v1/integrations/${provider}/test`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ summary: `Test ${provider}` }),
-        });
-        if (!res.ok) throw new Error("Test Failed");
-        resultEl.textContent = t('test_success');
-        refreshProviders();
-      } catch (e) {
-        resultEl.textContent = t('test_failed');
-      }
-    });
-  });
+    const briefText = brief?.markdown || "";
+    renderBriefMarkdown(briefText);
+  } catch (_) {
+    if (currentBriefRequest !== briefRequestId) {
+      return;
+    }
+    briefMarkdownEl.textContent = t("brief_load_failed");
+  }
 }
 
-function refreshProviders() {
-  fetchApi("/api/v1/integrations").then(data => {
-    renderProviders(data.providers || []);
-    integrationLastUpdatedEl.textContent = fmtNow();
-  }).catch(e => { });
+async function refreshAll() {
+  if (refreshInFlight) {
+    return;
+  }
+
+  refreshInFlight = true;
+  refreshBtn.disabled = true;
+  try {
+    await refreshBriefSettings();
+    const snapshot = await fetchApi("/api/v1/dashboard/snapshot").catch(() => ({}));
+    renderKpis(snapshot?.overview || {});
+    renderConnectorHealth(snapshot?.connector_health || []);
+    renderPending(snapshot?.pending_confirmations || []);
+    renderConflicts(snapshot?.open_conflicts || []);
+    renderRuntimeLogs(snapshot?.recent_logs || []);
+    maybeNotifySnapshot(snapshot);
+    lastUpdatedEl.textContent = `${t("last_updated")} ${fmtNow()}`;
+
+    await refreshLatestBrief();
+  } catch (error) {
+    console.error("Refresh failed", error);
+  } finally {
+    refreshInFlight = false;
+    refreshBtn.disabled = false;
+  }
 }
 
-customProviderFormEl.addEventListener("submit", (evt) => {
-  evt.preventDefault();
-  const form = new FormData(customProviderFormEl);
-  const provider = form.get("provider")?.toString().trim();
-  if (!provider) return;
-
-  const payload = {
-    display_name: form.get("display_name")?.toString().trim(),
-    source: form.get("source")?.toString().trim() || "custom",
-    webhook_secret: form.get("webhook_secret")?.toString().trim(),
-    description: form.get("description")?.toString().trim()
-  };
-
-  fetch(`/api/v1/integrations/${encodeURIComponent(provider)}/configure`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-  }).then(() => {
-    customProviderResultEl.textContent = "Configured.";
-    customProviderFormEl.reset();
-    refreshProviders();
-  }).catch(() => { customProviderResultEl.textContent = "Failed to configure."; });
+langSwitchEl.value = currentLang;
+langSwitchEl.addEventListener("change", (event) => {
+  currentLang = event.target.value;
+  localStorage.setItem("steward_lang", currentLang);
+  applyI18n();
+  refreshAll();
 });
 
-nlIntegrationFormEl.addEventListener("submit", async (evt) => {
-  evt.preventDefault();
-  const text = document.getElementById("integration-text").value.trim();
-  if (!text) return;
-  nlIntegrationResultEl.textContent = "...";
+refreshBtn.addEventListener("click", refreshAll);
+briefViewBtn.addEventListener("click", async () => {
+  briefViewBtn.disabled = true;
   try {
-    const res = await fetch("/api/v1/integrations/nl", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
-    });
-    if (!res.ok) throw new Error("Failed");
-    nlIntegrationResultEl.textContent = "Applied.";
-    refreshProviders();
-  } catch (e) {
-    nlIntegrationResultEl.textContent = "Error applying config.";
+    await refreshLatestBrief();
+    lastUpdatedEl.textContent = `${t("last_updated")} ${fmtNow()}`;
+  } finally {
+    briefViewBtn.disabled = false;
   }
 });
+eventFormEl.addEventListener("submit", submitEvent);
+briefSettingsSaveBtn.addEventListener("click", saveBriefSettings);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    refreshAll();
+  }
+});
+
+applyI18n();
+attachNotificationPermissionOnFirstIntent();
+refreshAll();
+setInterval(() => {
+  if (!document.hidden) {
+    refreshAll();
+  }
+}, 15000);

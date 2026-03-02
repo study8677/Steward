@@ -18,6 +18,7 @@ from steward.services.conflict import ConflictService
 from steward.services.context_space import ContextSpaceService
 from steward.services.planner import PlannerService
 from steward.services.policy_gate import PolicyGateService
+from steward.services.waiting import WaitingService
 
 
 class EventIngestService:
@@ -31,12 +32,14 @@ class EventIngestService:
         policy_gate_service: PolicyGateService,
         action_runner_service: ActionRunnerService,
         conflict_service: ConflictService,
+        waiting_service: WaitingService | None = None,
     ) -> None:
         self._context_space_service = context_space_service
         self._planner_service = planner_service
         self._policy_gate_service = policy_gate_service
         self._action_runner_service = action_runner_service
         self._conflict_service = conflict_service
+        self._waiting_service = waiting_service
         self._logger = structlog.get_logger("event_ingest")
 
     async def ingest_manual_event(
@@ -85,6 +88,10 @@ class EventIngestService:
             source=event.source,
             summary=event.summary[:50],
         )
+        if self._waiting_service is not None and event.match_key:
+            resumed = await self._waiting_service.resume_by_match_key(session, event.match_key)
+            if resumed:
+                self._logger.info("waiting_plans_resumed", match_key=event.match_key, count=resumed)
 
         space = await self._context_space_service.route_event(session, event)
         task, plan = await self._planner_service.build_plan(session, event, space)
@@ -99,6 +106,8 @@ class EventIngestService:
                 task_id=task.task_id,
                 plan_id=plan.plan_id,
                 gate_result=GateResult.CONFIRM,
+                dispatch_id=plan.dispatch_id,
+                execution_status=plan.execution_status,
             )
 
         risk_level = RiskLevel(task.risk_level)
@@ -131,6 +140,8 @@ class EventIngestService:
             task_id=task.task_id,
             plan_id=plan.plan_id,
             gate_result=gate_result,
+            dispatch_id=plan.dispatch_id,
+            execution_status=plan.execution_status,
         )
 
     async def ingest_webhook_event(
@@ -138,7 +149,7 @@ class EventIngestService:
         session: AsyncSession,
         payload: dict[str, object],
     ) -> EventIngestResponse:
-        """处理 webhook 事件（首版用统一逻辑）。"""
+        """处理 webhook 事件。"""
         request = normalize_webhook_payload("github", payload)
         request.source = SourceType.GITHUB
         return await self._ingest_request(session, request)

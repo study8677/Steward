@@ -45,6 +45,8 @@ class EventIngestResponse(BaseModel):
     task_id: str
     plan_id: str
     gate_result: GateResult
+    dispatch_id: str | None = None
+    execution_status: str | None = None
 
 
 class IntegrationNlRequest(BaseModel):
@@ -59,6 +61,8 @@ class IntegrationApplyResponse(BaseModel):
     applied_fields: list[str] = Field(default_factory=list)
     message: str
     providers: list[dict[str, Any]] = Field(default_factory=list)
+    mcp_servers: list[dict[str, Any]] = Field(default_factory=list)
+    skills: list[dict[str, Any]] = Field(default_factory=list)
     raw_parse_reason: str = ""
 
 
@@ -66,6 +70,8 @@ class IntegrationProviderResponse(BaseModel):
     """信息源接入状态响应。"""
 
     providers: list[dict[str, Any]] = Field(default_factory=list)
+    mcp_servers: list[dict[str, Any]] = Field(default_factory=list)
+    skills: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SpaceItem(BaseModel):
@@ -92,6 +98,8 @@ class PlanDecisionResponse(BaseModel):
 
     plan_id: str
     state: PlanState
+    dispatch_id: str | None = None
+    execution_status: str | None = None
 
 
 class RouteDecision(BaseModel):

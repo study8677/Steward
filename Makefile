@@ -4,7 +4,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 UV := $(VENV)/bin/uv
 
-.PHONY: start bootstrap doctor lint test format run migrate upgrade downgrade
+.PHONY: start bootstrap doctor lint test format run worker migrate upgrade downgrade
 
 # 一键启动（新用户推荐入口）
 start:
@@ -36,6 +36,9 @@ format:
 
 run:
 	$(UV) run uvicorn steward.main:app --host 127.0.0.1 --port 8000 --reload
+
+worker:
+	$(UV) run steward-worker
 
 migrate:
 	$(UV) run alembic revision --autogenerate -m "auto migration"

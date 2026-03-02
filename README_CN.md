@@ -31,7 +31,7 @@ Steward 就是你的数字管家——它静默感知邮件、GitHub、日历、
 | ⚡ **自主执行** | 低风险任务自动完成，带审计记录和回滚能力 |
 | 🛡️ **策略门禁** | 高风险/不可逆动作必须人工确认，安全底线不可配置绕过 |
 | 📋 **定时简报** | 每 4 小时汇总一次，用自然语言告诉你"做了什么、等什么、需要你决定什么" |
-| 🔌 **可插拔连接器** | Slack、Gmail、Google Calendar、MCP——通过统一 Connector 协议接入 |
+| 🔌 **能力管理中心（MCP + Skill）** | 社区优先复用能力，在 Dashboard 内统一启用/停用/配置 |
 | 🧩 **冲突仲裁** | 多任务竞争同一资源时，自动合并/串行/升级处理 |
 
 ## 📸 Dashboard 预览
@@ -50,7 +50,7 @@ Steward 就是你的数字管家——它静默感知邮件、GitHub、日历、
 
 ## 🚀 快速开始
 
-**只需要一行命令。**
+### 1）快速体验 API/UI（不需要 Docker）
 
 ```bash
 git clone https://github.com/user/Steward.git
@@ -80,14 +80,53 @@ make start
    Dashboard:  http://127.0.0.1:8000/dashboard
 ```
 
-仅需填入一个 **API Key**，无需 Docker，无需手工编辑配置文件。
+该模式适合本地体验 API/UI 和人工确认流程。
 
-> 💡 **进阶用户**：如需使用 Postgres，设置环境变量 `STEWARD_DATABASE_URL` 并运行 `docker compose up -d && make upgrade`。
+### 2）完整真实执行模式（推荐）
+
+若要开启**真实异步执行**（`gate_result=auto` 进入队列执行），Steward 需要：
+
+- Redis（消息队列/结果后端）
+- worker 进程（`steward-worker`）
+
+Docker **不是必须**，只是本地同时拉起 Postgres + Redis 的最省事方式。
+
+```bash
+# 终端 A
+docker compose up -d        # 启动 postgres + redis
+make upgrade
+make run
+
+# 终端 B
+make worker
+```
+
+如果你不用 Docker，也可以使用本机/远程的 Postgres、Redis，并通过环境变量配置。
+
+### 3）仅 API/UI（关闭执行引擎，可选）
+
+```bash
+export STEWARD_EXECUTION_ENABLED=false
+make run
+```
+
+## 🔌 能力配置（第一性原理）
+
+- 单一能力模型：`MCP Server + Skill` 是主接入抽象。
+- 社区优先：优先复用社区 MCP 与本地/社区 Skill，再考虑自定义 Provider。
+- Dashboard 入口：`http://127.0.0.1:8000/dashboard/integrations`。
+- 核心接口：
+  - `GET /api/v1/integrations`
+  - `POST /api/v1/integrations/nl`
+  - `POST /api/v1/integrations/mcp/{server}/configure|enable|disable`
+  - `POST /api/v1/integrations/skills/{skill}/configure|enable|disable`
+- 运行时持久化：`config/integrations.runtime.json`（`config`、`custom_providers`、`mcp_servers`、`skills`）。
+- 兼容说明：`/api/v1/skills` 仅作为兼容层，底层状态与 integrations 共用同一来源。
 
 ## 🏗️ 架构概览
 
 ```
-信号源 (GitHub / 邮件 / 日历 / 屏幕 / MCP)
+信号源 (GitHub / 邮件 / 日历 / 屏幕 / MCP / Skill)
          │
          ▼
    ┌─────────────┐
@@ -104,13 +143,18 @@ make start
    │  策略门禁    │  ← 风险评估、置信度、打扰预算
    └──────┬──────┘
           │
+          ▼
+   ┌─────────────┐
+   │ 异步分发层   │  ← Celery + Redis
+   └──────┬──────┘
+          │
      ┌────┴────┐
      ▼         ▼
-  自动执行   请求确认
+  Worker 执行  请求确认
      │         │
      ▼         ▼
    ┌─────────────┐
-   │  简报 & 审计 │  ← 自然语言总结、完整决策轨迹
+   │  简报 & 审计 │  ← 自然语言总结 + 执行尝试日志
    └─────────────┘
 ```
 
@@ -122,6 +166,7 @@ make start
 | 服务层 | FastAPI + Uvicorn |
 | 数据层 | SQLite（默认）/ PostgreSQL + SQLAlchemy + Alembic |
 | 调度 | APScheduler（事件驱动优先，轮询兜底） |
+| 执行运行时 | Celery + Redis |
 | 模型 | OpenAI 兼容 API（任意供应商） |
 | 可观测性 | structlog + OpenTelemetry + Prometheus |
 
@@ -130,13 +175,16 @@ make start
 ```
 steward/
 ├── api/              # FastAPI 路由（REST + Webhook）
+├── planning/         # 基于 Superpowers 资产的计划编译与执行规则校验
 ├── core/             # 配置、日志、模型层
 ├── domain/           # 枚举、Schema、领域模型
 ├── infra/            # 数据库、迁移
-├── connectors/       # GitHub / Email / Calendar / MCP 连接器
+├── connectors/       # GitHub / Email / Calendar / MCP / Skill 连接器
+├── connectors_runtime/# 声明式连接器规格 + 运行时校验
 ├── services/         # 核心业务逻辑（门禁、简报、冲突仲裁）
-├── runtime/          # 调度器、状态机
-├── macos/            # macOS 托盘 & 屏幕传感器
+├── runtime/          # 调度器 + 异步执行运行时
+├── macos/            # macOS 托盘壳层
+├── screen_sensor/    # 跨平台屏幕传感器（macOS / Windows / Linux）
 └── ui/               # Dashboard 前端
 ```
 

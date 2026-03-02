@@ -1,0 +1,10 @@
+connector: local
+implemented: false
+auth:
+  mode: none
+  required_env: []
+actions: []
+streams: []
+meta:
+  source: steward
+  reason: disabled

@@ -1,0 +1,14 @@
+connector: mcp
+implemented: true
+auth:
+  mode: api_key
+  required_env: []
+actions:
+  - name: mcp_execute
+    required_payload_fields: []
+    retryable: true
+streams:
+  - name: events
+    cursor_field: cursor
+meta:
+  source: steward

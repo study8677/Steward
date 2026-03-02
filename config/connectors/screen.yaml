@@ -1,0 +1,12 @@
+connector: screen
+implemented: true
+auth:
+  mode: webhook
+  required_env: []
+actions:
+  - name: collect_screen_signal
+    required_payload_fields: [summary]
+    retryable: true
+streams: []
+meta:
+  source: steward

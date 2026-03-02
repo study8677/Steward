@@ -1,0 +1,15 @@
+connector: chat
+implemented: true
+auth:
+  mode: webhook
+  required_env: []
+actions:
+  - name: post_message
+    required_payload_fields: [text]
+    retryable: true
+  - name: reply_thread
+    required_payload_fields: [text]
+    retryable: true
+streams: []
+meta:
+  source: steward

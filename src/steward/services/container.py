@@ -8,6 +8,8 @@ from steward.connectors.registry import ConnectorRegistry
 from steward.core.config import Settings
 from steward.core.policy import PolicyLoader
 from steward.learning.feedback import FeedbackLearningService
+from steward.planning import PlanCompiler, SuperpowersAssets
+from steward.runtime.execution.dispatcher import ExecutionDispatcher
 from steward.services.action_runner import ActionRunnerService
 from steward.services.brief_preferences import BriefPreferenceService
 from steward.services.briefing import BriefingService
@@ -18,10 +20,12 @@ from steward.services.dashboard import DashboardService
 from steward.services.decision_log import DecisionLogService
 from steward.services.event_ingest import EventIngestService
 from steward.services.integration_config import IntegrationConfigService
+from steward.services.memory_manager import MemoryManager
 from steward.services.model_gateway import ModelGateway
 from steward.services.plan_control import PlanControlService
 from steward.services.planner import PlannerService
 from steward.services.policy_gate import PolicyGateService
+from steward.services.recorder_agent import RecorderAgent
 from steward.services.verifier import VerifierService
 from steward.services.waiting import WaitingService
 
@@ -50,6 +54,8 @@ class ServiceContainer:
     event_ingest_service: EventIngestService
     plan_control_service: PlanControlService
     integration_config_service: IntegrationConfigService
+    memory_manager: MemoryManager
+    recorder_agent: RecorderAgent
 
 
 def build_service_container(settings: Settings) -> ServiceContainer:
@@ -63,16 +69,28 @@ def build_service_container(settings: Settings) -> ServiceContainer:
     connectors = ConnectorRegistry(settings)
 
     context_space_service = ContextSpaceService(model_gateway)
-    planner_service = PlannerService()
+    superpowers_assets = SuperpowersAssets.load()
+    planner_service = PlannerService(
+        plan_compiler=PlanCompiler(
+            writing_guidance=superpowers_assets.writing_plans,
+            executing_guidance=superpowers_assets.executing_plans,
+        )
+    )
     policy_gate_service = PolicyGateService(settings, policy_loader)
     decision_log_service = DecisionLogService()
     verifier_service = VerifierService()
-    action_runner_service = ActionRunnerService(connectors, verifier_service, decision_log_service)
+    execution_dispatcher = ExecutionDispatcher()
+    action_runner_service = ActionRunnerService(
+        connectors,
+        decision_log_service,
+        execution_dispatcher,
+        execution_enabled=settings.execution_enabled,
+    )
     waiting_service = WaitingService(action_runner_service)
     conflict_service = ConflictService()
     briefing_service = BriefingService(model_gateway)
     feedback_service = FeedbackLearningService()
-    capability_manager_service = CapabilityManagerService()
+    capability_manager_service = CapabilityManagerService(integration_config_service, connectors)
     dashboard_service = DashboardService(connectors, model_gateway)
 
     event_ingest_service = EventIngestService(
@@ -81,12 +99,17 @@ def build_service_container(settings: Settings) -> ServiceContainer:
         policy_gate_service=policy_gate_service,
         action_runner_service=action_runner_service,
         conflict_service=conflict_service,
+        waiting_service=waiting_service,
     )
     plan_control_service = PlanControlService(
         action_runner_service=action_runner_service,
         policy_gate_service=policy_gate_service,
         feedback_service=feedback_service,
     )
+
+    memory_manager = MemoryManager(brain_dir=settings.brain_dir)
+    memory_manager.ensure_structure()
+    recorder_agent = RecorderAgent(memory_manager)
 
     return ServiceContainer(
         settings=settings,
@@ -109,4 +132,6 @@ def build_service_container(settings: Settings) -> ServiceContainer:
         event_ingest_service=event_ingest_service,
         plan_control_service=plan_control_service,
         integration_config_service=integration_config_service,
+        memory_manager=memory_manager,
+        recorder_agent=recorder_agent,
     )

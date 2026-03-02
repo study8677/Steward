@@ -27,16 +27,29 @@ def _base_url_from_request(request: Request) -> str:
     return f"{scheme}://{host}"
 
 
+def _integration_snapshot(
+    *,
+    services: ServiceContainer,
+    base_url: str,
+) -> IntegrationProviderResponse:
+    """统一构造接入状态快照。"""
+    return IntegrationProviderResponse(
+        providers=services.integration_config_service.provider_status(base_url=base_url),
+        mcp_servers=services.integration_config_service.mcp_server_status(),
+        skills=services.integration_config_service.skill_status(),
+    )
+
+
 @router.get("", response_model=IntegrationProviderResponse)
 async def list_integrations(
     request: Request,
     services: ServiceContainer = Depends(get_services),
 ) -> IntegrationProviderResponse:
     """返回当前信息源接入状态。"""
-    providers = services.integration_config_service.provider_status(
+    return _integration_snapshot(
+        services=services,
         base_url=_base_url_from_request(request),
     )
-    return IntegrationProviderResponse(providers=providers)
 
 
 @router.post("/nl", response_model=IntegrationApplyResponse)
@@ -45,7 +58,7 @@ async def apply_integrations_from_nl(
     request: Request,
     services: ServiceContainer = Depends(get_services),
 ) -> IntegrationApplyResponse:
-    """通过自然语言应用信息源配置。"""
+    """通过自然语言应用接入配置（legacy provider + MCP + skills）。"""
     result = await services.integration_config_service.apply_from_natural_language(
         payload.text,
         base_url=_base_url_from_request(request),
@@ -54,7 +67,137 @@ async def apply_integrations_from_nl(
         applied_fields=[str(item) for item in result.get("applied_fields", [])],
         message=str(result.get("message", "已处理")),
         providers=list(result.get("providers", [])),
+        mcp_servers=list(result.get("mcp_servers", [])),
+        skills=list(result.get("skills", [])),
         raw_parse_reason=str(result.get("raw_parse_reason", "")),
+    )
+
+
+@router.post("/mcp/{server}/configure", response_model=IntegrationApplyResponse)
+async def configure_mcp_server(
+    server: str,
+    payload: dict[str, Any],
+    request: Request,
+    services: ServiceContainer = Depends(get_services),
+) -> IntegrationApplyResponse:
+    """创建或更新 MCP server 配置。"""
+    result = services.integration_config_service.configure_mcp_server(
+        server=server,
+        payload=payload,
+    )
+    configured_server = str(result.get("server", ""))
+    if not configured_server:
+        raise HTTPException(status_code=400, detail="invalid_mcp_server")
+
+    created_custom = bool(result.get("created_custom", False))
+    action = "已创建" if created_custom else "已更新"
+    snapshot = _integration_snapshot(
+        services=services,
+        base_url=_base_url_from_request(request),
+    )
+    return IntegrationApplyResponse(
+        applied_fields=[str(item) for item in result.get("applied_fields", [])],
+        message=f"{action} MCP {configured_server}",
+        providers=snapshot.providers,
+        mcp_servers=snapshot.mcp_servers,
+        skills=snapshot.skills,
+        raw_parse_reason="mcp_configure_api",
+    )
+
+
+@router.post("/mcp/{server}/enable", response_model=IntegrationProviderResponse)
+async def enable_mcp_server(
+    server: str,
+    request: Request,
+    services: ServiceContainer = Depends(get_services),
+) -> IntegrationProviderResponse:
+    """启用指定 MCP server。"""
+    status = services.integration_config_service.set_mcp_server_enabled(server, True)
+    if status is None:
+        raise HTTPException(status_code=404, detail="unknown_mcp_server")
+    return _integration_snapshot(
+        services=services,
+        base_url=_base_url_from_request(request),
+    )
+
+
+@router.post("/mcp/{server}/disable", response_model=IntegrationProviderResponse)
+async def disable_mcp_server(
+    server: str,
+    request: Request,
+    services: ServiceContainer = Depends(get_services),
+) -> IntegrationProviderResponse:
+    """停用指定 MCP server。"""
+    status = services.integration_config_service.set_mcp_server_enabled(server, False)
+    if status is None:
+        raise HTTPException(status_code=404, detail="unknown_mcp_server")
+    return _integration_snapshot(
+        services=services,
+        base_url=_base_url_from_request(request),
+    )
+
+
+@router.post("/skills/{skill}/configure", response_model=IntegrationApplyResponse)
+async def configure_skill(
+    skill: str,
+    payload: dict[str, Any],
+    request: Request,
+    services: ServiceContainer = Depends(get_services),
+) -> IntegrationApplyResponse:
+    """创建或更新 Skill 配置。"""
+    result = services.integration_config_service.configure_skill(
+        skill=skill,
+        payload=payload,
+    )
+    configured_skill = str(result.get("skill", ""))
+    if not configured_skill:
+        raise HTTPException(status_code=400, detail="invalid_skill")
+
+    created_custom = bool(result.get("created_custom", False))
+    action = "已创建" if created_custom else "已更新"
+    snapshot = _integration_snapshot(
+        services=services,
+        base_url=_base_url_from_request(request),
+    )
+    return IntegrationApplyResponse(
+        applied_fields=[str(item) for item in result.get("applied_fields", [])],
+        message=f"{action} Skill {configured_skill}",
+        providers=snapshot.providers,
+        mcp_servers=snapshot.mcp_servers,
+        skills=snapshot.skills,
+        raw_parse_reason="skill_configure_api",
+    )
+
+
+@router.post("/skills/{skill}/enable", response_model=IntegrationProviderResponse)
+async def enable_skill(
+    skill: str,
+    request: Request,
+    services: ServiceContainer = Depends(get_services),
+) -> IntegrationProviderResponse:
+    """启用指定 Skill。"""
+    status = services.integration_config_service.set_skill_enabled(skill, True)
+    if status is None:
+        raise HTTPException(status_code=404, detail="unknown_skill")
+    return _integration_snapshot(
+        services=services,
+        base_url=_base_url_from_request(request),
+    )
+
+
+@router.post("/skills/{skill}/disable", response_model=IntegrationProviderResponse)
+async def disable_skill(
+    skill: str,
+    request: Request,
+    services: ServiceContainer = Depends(get_services),
+) -> IntegrationProviderResponse:
+    """停用指定 Skill。"""
+    status = services.integration_config_service.set_skill_enabled(skill, False)
+    if status is None:
+        raise HTTPException(status_code=404, detail="unknown_skill")
+    return _integration_snapshot(
+        services=services,
+        base_url=_base_url_from_request(request),
     )
 
 
@@ -71,10 +214,10 @@ async def join_integration_provider(
         provider=provider,
         base_url=_base_url_from_request(request),
     )
-    providers = services.integration_config_service.provider_status(
+    return _integration_snapshot(
+        services=services,
         base_url=_base_url_from_request(request),
     )
-    return IntegrationProviderResponse(providers=providers)
 
 
 @router.post("/{provider}/configure", response_model=IntegrationApplyResponse)
@@ -95,13 +238,16 @@ async def configure_integration_provider(
     created_custom = bool(result.get("created_custom", False))
     action = "已创建" if created_custom else "已更新"
     message = f"{action}信息源 {configured_provider}"
-    providers = services.integration_config_service.provider_status(
+    snapshot = _integration_snapshot(
+        services=services,
         base_url=_base_url_from_request(request),
     )
     return IntegrationApplyResponse(
         applied_fields=[str(item) for item in result.get("applied_fields", [])],
         message=message,
-        providers=providers,
+        providers=snapshot.providers,
+        mcp_servers=snapshot.mcp_servers,
+        skills=snapshot.skills,
         raw_parse_reason="configure_api",
     )
 
@@ -147,6 +293,8 @@ async def test_integration_provider(
         "event_id": response.event_id,
         "plan_id": response.plan_id,
         "gate_result": response.gate_result.value,
+        "dispatch_id": response.dispatch_id,
+        "execution_status": response.execution_status,
     }
 
 

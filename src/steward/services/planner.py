@@ -1,7 +1,8 @@
-"""Planner 服务：从事件生成任务与执行计划。"""
+"""Planner 服务：从事件生成可执行计划。"""
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,10 +15,25 @@ from steward.infra.db.models import (
     PlanEffect,
     TaskCandidate,
 )
+from steward.planning.execution_policy import ExecutionPolicy
+from steward.planning.plan_compiler import PlanCompiler
 
 
 class PlannerService:
     """将事件转换为可执行计划。"""
+
+    _github_ref = re.compile(
+        r"(?:github:(?:issue|pr):)?(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)#(?P<number>\d+)",
+        re.IGNORECASE,
+    )
+
+    def __init__(
+        self,
+        plan_compiler: PlanCompiler | None = None,
+        execution_policy: ExecutionPolicy | None = None,
+    ) -> None:
+        self._plan_compiler = plan_compiler or PlanCompiler()
+        self._execution_policy = execution_policy or ExecutionPolicy()
 
     async def build_plan(
         self,
@@ -44,7 +60,33 @@ class PlannerService:
         reversibility = (
             Reversibility.IRREVERSIBLE if risk_level == RiskLevel.HIGH else Reversibility.REVERSIBLE
         )
-        steps = self._build_steps(event, intent)
+        raw_steps = self._build_steps(event, intent)
+        requires_confirmation = reversibility == Reversibility.IRREVERSIBLE
+
+        compiled_plan, compile_error = self._plan_compiler.compile(
+            intent=intent,
+            source=event.source,
+            source_ref=event.source_ref,
+            risk_level=risk_level.value,
+            reversibility=reversibility.value,
+            requires_confirmation=requires_confirmation,
+            raw_steps=raw_steps,
+        )
+
+        compile_errors: list[str] = []
+        steps: list[dict[str, object]] = []
+        if compiled_plan is None:
+            requires_confirmation = True
+            compile_errors.append(compile_error.reason if compile_error else "compile_failed")
+            if compile_error is not None:
+                compile_errors.extend(compile_error.details)
+        else:
+            steps = [step.model_dump() for step in compiled_plan.steps]
+            violations = self._execution_policy.evaluate(compiled_plan)
+            if violations:
+                requires_confirmation = True
+                compile_errors.extend(f"{item.code}:{item.message}" for item in violations)
+
         wait_condition = "await_external_reply" if "等待" in event.summary else None
         resume_trigger = event.match_key if wait_condition else None
 
@@ -54,11 +96,13 @@ class PlannerService:
             steps=steps,
             rollback=[],
             reversibility=reversibility.value,
-            requires_confirmation=reversibility == Reversibility.IRREVERSIBLE,
+            requires_confirmation=requires_confirmation,
             wait_condition=wait_condition,
             resume_trigger=resume_trigger,
             wait_timeout_at=(datetime.now(UTC) + timedelta(hours=24)) if wait_condition else None,
             on_wait_timeout="remind_then_escalate" if wait_condition else None,
+            execution_status="pending_confirmation" if requires_confirmation else "idle",
+            last_error="; ".join(compile_errors)[:1000] if compile_errors else None,
         )
         session.add(plan)
         await session.flush()
@@ -108,18 +152,23 @@ class PlannerService:
     def _build_steps(self, event: ContextEvent, intent: str) -> list[dict[str, object]]:
         """构建执行步骤。"""
         if event.source == "github":
+            parsed = self._parse_github_ref(event.source_ref)
+            if parsed is None:
+                return []
+            owner, repo, issue_number = parsed
             return [
                 {
                     "connector": "github",
                     "action_type": "add_issue_comment",
                     "payload": {
-                        "owner": "",
-                        "repo": "",
-                        "issue_number": 0,
+                        "owner": owner,
+                        "repo": repo,
+                        "issue_number": issue_number,
                         "body": f"Steward 自动跟进：{intent}",
                     },
                 }
             ]
+
         if event.source == "email":
             return [
                 {
@@ -128,6 +177,7 @@ class PlannerService:
                     "payload": {"subject": f"Re: {event.summary[:60]}", "intent": intent},
                 }
             ]
+
         if event.source == "chat":
             return [
                 {
@@ -136,6 +186,7 @@ class PlannerService:
                     "payload": {"text": f"Steward 跟进建议：{intent}", "intent": intent},
                 }
             ]
+
         if event.source == "calendar":
             return [
                 {
@@ -144,6 +195,7 @@ class PlannerService:
                     "payload": {"title": f"Steward follow-up: {intent}"},
                 }
             ]
+
         if event.source == "screen":
             return [
                 {
@@ -153,13 +205,22 @@ class PlannerService:
                 }
             ]
 
-        return [
-            {
-                "connector": "manual",
-                "action_type": "record_note",
-                "payload": {"summary": event.summary, "intent": intent},
-            }
-        ]
+        if event.source in {"manual", "custom"}:
+            return [
+                {
+                    "connector": "manual",
+                    "action_type": "record_note",
+                    "payload": {"summary": event.summary, "intent": intent},
+                }
+            ]
+
+        return []
+
+    def _parse_github_ref(self, source_ref: str) -> tuple[str, str, int] | None:
+        match = self._github_ref.search(source_ref)
+        if match is None:
+            return None
+        return match.group("owner"), match.group("repo"), int(match.group("number"))
 
     def _infer_resource_key(self, event: ContextEvent) -> str | None:
         """从事件中推断资源键。"""

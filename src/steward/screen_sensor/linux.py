@@ -7,11 +7,12 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import cast
 
 from steward.screen_sensor.base import BaseScreenSensor, FrontmostWindow
 
-_WINDOW_ID_PATTERN = re.compile(r"0x[0-9a-fA-F]+")
-_QUOTED_VALUE_PATTERN = re.compile(r'"([^"]*)"')
+_WINDOW_ID_PATTERN: re.Pattern[str] = re.compile(r"0x[0-9a-fA-F]+")
+_QUOTED_VALUE_PATTERN: re.Pattern[str] = re.compile(r'"([^"]*)"')
 
 
 class LinuxScreenSensor(BaseScreenSensor):
@@ -172,7 +173,7 @@ class LinuxScreenSensor(BaseScreenSensor):
 
     def _parse_xprop_string(self, line: str) -> str:
         """解析 xprop 字符串字段。"""
-        quoted = _QUOTED_VALUE_PATTERN.findall(line)
+        quoted = cast(list[str], _QUOTED_VALUE_PATTERN.findall(line))
         if quoted:
             return quoted[0].strip()
         if "=" not in line:

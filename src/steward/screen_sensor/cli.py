@@ -41,19 +41,30 @@ def build_screen_sensor(system_name: str | None = None) -> BaseScreenSensor:
     default_actor = getpass.getuser().strip() or normalized_system or "screen-sensor"
     actor = os.getenv("STEWARD_SCREEN_SENSOR_ACTOR", default_actor)
 
-    sensor_kwargs = {
-        "base_url": base_url,
-        "interval_seconds": interval_seconds,
-        "http_timeout_seconds": http_timeout_seconds,
-        "webhook_token": webhook_token,
-        "actor": actor,
-    }
     if normalized_system in {"darwin", "mac", "macos"}:
-        return MacScreenSensor(**sensor_kwargs)
+        return MacScreenSensor(
+            base_url=base_url,
+            interval_seconds=interval_seconds,
+            http_timeout_seconds=http_timeout_seconds,
+            webhook_token=webhook_token,
+            actor=actor,
+        )
     if normalized_system in {"windows", "win32"}:
-        return WindowsScreenSensor(**sensor_kwargs)
+        return WindowsScreenSensor(
+            base_url=base_url,
+            interval_seconds=interval_seconds,
+            http_timeout_seconds=http_timeout_seconds,
+            webhook_token=webhook_token,
+            actor=actor,
+        )
     if normalized_system == "linux":
-        return LinuxScreenSensor(**sensor_kwargs)
+        return LinuxScreenSensor(
+            base_url=base_url,
+            interval_seconds=interval_seconds,
+            http_timeout_seconds=http_timeout_seconds,
+            webhook_token=webhook_token,
+            actor=actor,
+        )
     raise RuntimeError(f"unsupported_platform:{resolved_system or 'unknown'}")
 
 

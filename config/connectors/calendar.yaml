@@ -1,0 +1,21 @@
+connector: calendar
+implemented: true
+auth:
+  mode: caldav
+  required_env:
+    - STEWARD_CALDAV_URL
+actions:
+  - name: create_event
+    required_payload_fields: [title]
+    retryable: true
+  - name: update_event
+    required_payload_fields: [title]
+    retryable: true
+  - name: cancel_event
+    required_payload_fields: [title]
+    retryable: true
+streams:
+  - name: upcoming
+    cursor_field: updated_at
+meta:
+  source: steward

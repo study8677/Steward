@@ -26,7 +26,12 @@ async def confirm_plan(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     await session.commit()
-    return PlanDecisionResponse(plan_id=plan.plan_id, state=PlanState(plan.state))
+    return PlanDecisionResponse(
+        plan_id=plan.plan_id,
+        state=PlanState(plan.state),
+        dispatch_id=plan.dispatch_id,
+        execution_status=plan.execution_status,
+    )
 
 
 @router.post("/{plan_id}/reject", response_model=PlanDecisionResponse)
@@ -42,4 +47,9 @@ async def reject_plan(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     await session.commit()
-    return PlanDecisionResponse(plan_id=plan.plan_id, state=PlanState(plan.state))
+    return PlanDecisionResponse(
+        plan_id=plan.plan_id,
+        state=PlanState(plan.state),
+        dispatch_id=plan.dispatch_id,
+        execution_status=plan.execution_status,
+    )

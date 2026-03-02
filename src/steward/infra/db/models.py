@@ -120,6 +120,10 @@ class ActionPlan(Base, TimestampMixin):
     on_wait_timeout: Mapped[str | None] = mapped_column(String(64), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    execution_status: Mapped[str] = mapped_column(String(32), default="idle", index=True)
+    current_step: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dispatch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 class DecisionLog(Base, TimestampMixin):
@@ -137,6 +141,85 @@ class DecisionLog(Base, TimestampMixin):
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     outcome: Mapped[str] = mapped_column(String(16), default=DecisionOutcome.SUCCEEDED.value)
+
+
+class ExecutionDispatch(Base, TimestampMixin):
+    """异步执行分发记录。"""
+
+    __tablename__ = "execution_dispatches"
+
+    dispatch_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    plan_id: Mapped[str] = mapped_column(String(64), ForeignKey("action_plans.plan_id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    trigger_reason: Mapped[str] = mapped_column(String(128), default="")
+    queued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ExecutionAttempt(Base, TimestampMixin):
+    """异步执行步骤尝试记录。"""
+
+    __tablename__ = "execution_attempts"
+
+    attempt_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    dispatch_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("execution_dispatches.dispatch_id"), index=True
+    )
+    plan_id: Mapped[str] = mapped_column(String(64), ForeignKey("action_plans.plan_id"), index=True)
+    connector_instance_id: Mapped[str] = mapped_column(String(64), default="")
+    step_index: Mapped[int] = mapped_column(Integer, default=0)
+    idempotency_key: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    external_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class ConnectorSpec(Base, TimestampMixin):
+    """Connector 声明式规格。"""
+
+    __tablename__ = "connector_specs"
+
+    spec_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    connector_name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    version: Mapped[str] = mapped_column(String(32), default="v1")
+    spec_payload: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    source: Mapped[str] = mapped_column(String(128), default="repo")
+
+
+class ConnectorInstance(Base, TimestampMixin):
+    """Connector 运行实例。"""
+
+    __tablename__ = "connector_instances"
+
+    instance_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    connector_name: Mapped[str] = mapped_column(String(64), index=True)
+    display_name: Mapped[str] = mapped_column(String(128), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    config_ref: Mapped[str] = mapped_column(String(255), default="")
+    auth_ref: Mapped[str] = mapped_column(String(255), default="")
+
+
+class ConnectorSyncState(Base, TimestampMixin):
+    """Connector 增量同步游标状态。"""
+
+    __tablename__ = "connector_sync_states"
+
+    state_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    instance_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("connector_instances.instance_id"), index=True
+    )
+    stream_name: Mapped[str] = mapped_column(String(128), index=True)
+    cursor_payload: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    bookmark: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    checkpoint_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class WaitingTrigger(Base, TimestampMixin):
@@ -250,3 +333,16 @@ Index("ix_waiting_match_state", WaitingTrigger.match_key, WaitingTrigger.trigger
 Index("ix_plan_waiting_timeout", ActionPlan.state, ActionPlan.wait_timeout_at)
 Index("ix_event_source_occurred", ContextEvent.source, ContextEvent.occurred_at)
 Index("ix_space_state_updated", ContextSpace.state, ContextSpace.updated_at)
+Index("ix_execution_dispatch_status_queued", ExecutionDispatch.status, ExecutionDispatch.queued_at)
+Index(
+    "ux_execution_attempt_connector_idempotency",
+    ExecutionAttempt.connector_instance_id,
+    ExecutionAttempt.idempotency_key,
+    unique=True,
+)
+Index(
+    "ux_connector_sync_state_instance_stream",
+    ConnectorSyncState.instance_id,
+    ConnectorSyncState.stream_name,
+    unique=True,
+)

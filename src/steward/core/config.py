@@ -55,6 +55,23 @@ class Settings(BaseSettings):
     mcp_gateway_base_url: str = ""
     mcp_gateway_api_key: str = ""
 
+    # GitHub 增强配置
+    github_repos: str = ""  # 逗号分隔的仓库列表，如 "owner/repo1,owner/repo2"
+
+    # IMAP 邮件拉取配置
+    imap_host: str = ""  # 如 imap.gmail.com
+    imap_port: int = 993
+    imap_user: str = ""
+    imap_password: str = ""  # Gmail 需使用 App Password
+
+    # CalDAV 日历拉取配置
+    caldav_url: str = ""  # 如 https://caldav.icloud.com/xxx
+    caldav_user: str = ""
+    caldav_password: str = ""
+
+    # Markdown 记忆系统
+    brain_dir: str = "~/.steward_brain"
+
     brief_window_hours: int = 4
     brief_content_level: str = "medium"
     fallback_polling_minutes: int = 5
@@ -65,6 +82,12 @@ class Settings(BaseSettings):
     webhook_backpressure_max_events_per_window: int = 120
     webhook_backpressure_window_seconds: int = 10
     webhook_backpressure_dedup_ttl_seconds: int = 120
+    connector_specs_dir: str = "config/connectors"
+
+    execution_enabled: bool = True
+    execution_redis_url: str = "redis://127.0.0.1:6379/0"
+    execution_max_retries: int = 2
+    execution_retry_delay_seconds: int = 20
 
     policy_file: str = Field(default="config/policy.yaml")
     integration_runtime_file: str = Field(default="config/integrations.runtime.json")

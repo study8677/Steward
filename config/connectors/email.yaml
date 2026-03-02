@@ -1,0 +1,20 @@
+connector: email
+implemented: true
+auth:
+  mode: imap
+  required_env:
+    - STEWARD_IMAP_HOST
+    - STEWARD_IMAP_USER
+    - STEWARD_IMAP_PASSWORD
+actions:
+  - name: create_draft
+    required_payload_fields: [subject]
+    retryable: true
+  - name: send_email
+    required_payload_fields: [subject]
+    retryable: true
+streams:
+  - name: inbox
+    cursor_field: uid
+meta:
+  source: steward

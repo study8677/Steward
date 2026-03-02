@@ -24,7 +24,7 @@ class ChatConnector:
         return ["chat:read", "chat:write"]
 
     async def pull(self, cursor: str | None) -> list[dict[str, object]]:
-        """首版走 webhook 驱动。"""
+        """当前走 webhook 驱动。"""
         _ = cursor
         return []
 

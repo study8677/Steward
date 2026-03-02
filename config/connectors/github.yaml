@@ -1,0 +1,18 @@
+connector: github
+implemented: true
+auth:
+  mode: bearer
+  required_env:
+    - STEWARD_GITHUB_TOKEN
+actions:
+  - name: add_issue_comment
+    required_payload_fields: [owner, repo, issue_number, body]
+    retryable: true
+  - name: set_issue_state
+    required_payload_fields: [owner, repo, issue_number, state]
+    retryable: true
+streams:
+  - name: notifications
+    cursor_field: updated_at
+meta:
+  source: steward

@@ -17,8 +17,10 @@ from steward.api.routers import (
     feedback,
     health,
     integrations,
+    memory,
     metrics,
     plans,
+    skills,
     spaces,
     ui,
     webhooks,
@@ -65,6 +67,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.services = services
     app.state.scheduler = scheduler
     app.state.webhook_backpressure = webhook_backpressure
+    app.state.memory_manager = services.memory_manager
+    app.state.execution_enabled = settings.execution_enabled
 
     if settings.enable_scheduler:
         await scheduler.start()
@@ -95,6 +99,8 @@ app.include_router(dashboard.router)
 app.include_router(integrations.router)
 app.include_router(ui.router)
 app.include_router(metrics.router)
+app.include_router(memory.router)
+app.include_router(skills.router)
 
 
 def run() -> None:
