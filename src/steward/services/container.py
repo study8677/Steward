@@ -74,7 +74,8 @@ def build_service_container(settings: Settings) -> ServiceContainer:
         plan_compiler=PlanCompiler(
             writing_guidance=superpowers_assets.writing_plans,
             executing_guidance=superpowers_assets.executing_plans,
-        )
+        ),
+        model_gateway=model_gateway,
     )
     policy_gate_service = PolicyGateService(settings, policy_loader)
     decision_log_service = DecisionLogService()

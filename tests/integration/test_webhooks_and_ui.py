@@ -44,6 +44,22 @@ def test_dashboard_snapshot_and_page(client: TestClient) -> None:
     assert integration_page.status_code == 200
     assert "信息源管理" in integration_page.text
 
+    executions_api = client.get("/api/v1/dashboard/executions")
+    assert executions_api.status_code == 200
+    executions_body = executions_api.json()
+    assert "items" in executions_body
+    assert "count" in executions_body
+
+    executions_api_en = client.get("/api/v1/dashboard/executions?lang=en")
+    assert executions_api_en.status_code == 200
+
+    executions_page = client.get("/dashboard/executions")
+    assert executions_page.status_code == 200
+    assert "执行结果中心" in executions_page.text
+
+    invalid_record = client.get("/api/v1/dashboard/records/../../etc/passwd")
+    assert invalid_record.status_code == 404
+
 
 def test_slack_provider_signature_and_dedup(client: TestClient) -> None:
     """Slack provider 路由应通过签名校验并做重复事件抑制。"""

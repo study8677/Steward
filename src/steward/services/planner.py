@@ -17,6 +17,7 @@ from steward.infra.db.models import (
 )
 from steward.planning.execution_policy import ExecutionPolicy
 from steward.planning.plan_compiler import PlanCompiler
+from steward.services.model_gateway import ModelGateway
 
 
 class PlannerService:
@@ -31,9 +32,11 @@ class PlannerService:
         self,
         plan_compiler: PlanCompiler | None = None,
         execution_policy: ExecutionPolicy | None = None,
+        model_gateway: ModelGateway | None = None,
     ) -> None:
         self._plan_compiler = plan_compiler or PlanCompiler()
         self._execution_policy = execution_policy or ExecutionPolicy()
+        self._model_gateway = model_gateway
 
     async def build_plan(
         self,
@@ -45,6 +48,46 @@ class PlannerService:
         intent = self._infer_intent(event.summary)
         risk_level = self._infer_risk(event.summary)
         priority = self._infer_priority(event.summary, risk_level)
+        reversibility = (
+            Reversibility.IRREVERSIBLE if risk_level == RiskLevel.HIGH else Reversibility.REVERSIBLE
+        )
+        raw_steps = self._build_steps(event, intent)
+        requires_confirmation = reversibility == Reversibility.IRREVERSIBLE
+        wait_condition: str | None = None
+        resume_trigger: str | None = None
+
+        if self._model_gateway is not None:
+            planned = await self._model_gateway.plan_event_execution(
+                event_summary=event.summary,
+                source=event.source,
+                source_ref=event.source_ref,
+                entities=event.entity_set,
+                default_intent=intent,
+                default_risk_level=risk_level.value,
+                default_priority=priority.value,
+                default_reversibility=reversibility.value,
+                default_requires_confirmation=requires_confirmation,
+                candidate_steps=raw_steps,
+            )
+            intent = str(planned.get("intent", intent)).strip()[:128] or intent
+            risk_level = self._coerce_risk(str(planned.get("risk_level", risk_level.value)))
+            priority = self._coerce_priority(str(planned.get("priority", priority.value)))
+            reversibility = self._coerce_reversibility(
+                str(planned.get("reversibility", reversibility.value))
+            )
+            requires_confirmation = bool(
+                planned.get("requires_confirmation", requires_confirmation)
+            )
+            if risk_level == RiskLevel.HIGH or reversibility == Reversibility.IRREVERSIBLE:
+                requires_confirmation = True
+            steps_from_model = planned.get("steps", raw_steps)
+            raw_steps = steps_from_model if isinstance(steps_from_model, list) else raw_steps
+            wait_condition_raw = planned.get("wait_condition")
+            if isinstance(wait_condition_raw, str) and wait_condition_raw.strip():
+                wait_condition = wait_condition_raw.strip()[:255]
+            resume_trigger_raw = planned.get("resume_trigger")
+            if isinstance(resume_trigger_raw, str) and resume_trigger_raw.strip():
+                resume_trigger = resume_trigger_raw.strip()[:255]
 
         task = TaskCandidate(
             derived_from=space.space_id,
@@ -56,12 +99,6 @@ class PlannerService:
         )
         session.add(task)
         await session.flush()
-
-        reversibility = (
-            Reversibility.IRREVERSIBLE if risk_level == RiskLevel.HIGH else Reversibility.REVERSIBLE
-        )
-        raw_steps = self._build_steps(event, intent)
-        requires_confirmation = reversibility == Reversibility.IRREVERSIBLE
 
         compiled_plan, compile_error = self._plan_compiler.compile(
             intent=intent,
@@ -87,8 +124,10 @@ class PlannerService:
                 requires_confirmation = True
                 compile_errors.extend(f"{item.code}:{item.message}" for item in violations)
 
-        wait_condition = "await_external_reply" if "等待" in event.summary else None
-        resume_trigger = event.match_key if wait_condition else None
+        if wait_condition is None and "等待" in event.summary:
+            wait_condition = "await_external_reply"
+        if resume_trigger is None and wait_condition:
+            resume_trigger = event.match_key
 
         plan = ActionPlan(
             task_id=task.task_id,
@@ -229,3 +268,25 @@ class PlannerService:
         if event.source_ref:
             return f"{event.source}:{event.source_ref}"
         return None
+
+    def _coerce_risk(self, value: str) -> RiskLevel:
+        normalized = value.strip().lower()
+        if normalized == "high":
+            return RiskLevel.HIGH
+        if normalized == "medium":
+            return RiskLevel.MEDIUM
+        return RiskLevel.LOW
+
+    def _coerce_priority(self, value: str) -> PriorityLevel:
+        normalized = value.strip().upper()
+        if normalized == PriorityLevel.P0.value:
+            return PriorityLevel.P0
+        if normalized == PriorityLevel.P1.value:
+            return PriorityLevel.P1
+        return PriorityLevel.P2
+
+    def _coerce_reversibility(self, value: str) -> Reversibility:
+        normalized = value.strip().lower()
+        if normalized == Reversibility.IRREVERSIBLE.value:
+            return Reversibility.IRREVERSIBLE
+        return Reversibility.REVERSIBLE

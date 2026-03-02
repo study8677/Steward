@@ -250,6 +250,297 @@ class ModelGateway:
         self._logger.info("summarize_executed_plan_ok", plan_id=plan_id[:8], summary=text[:50])
         return text
 
+    async def summarize_runtime_decisions(
+        self,
+        *,
+        decisions: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        """为运行日志中的决策记录生成人话摘要（批量）。"""
+        if not decisions:
+            return {}
+
+        fallback_map: dict[str, str] = {}
+        compact_items: list[dict[str, str]] = []
+
+        for item in decisions:
+            decision_id = str(item.get("decision_id", "")).strip()
+            if not decision_id:
+                continue
+
+            intent = str(item.get("intent", "follow_up"))
+            reason = str(item.get("reason", ""))
+            gate_result = str(item.get("gate_result", ""))
+            state_from = str(item.get("state_from", ""))
+            state_to = str(item.get("state_to", ""))
+            outcome = str(item.get("outcome", ""))
+            steps_raw = item.get("steps", [])
+            steps = steps_raw if isinstance(steps_raw, list) else []
+            action_detail = self._extract_action_detail(intent=intent, steps=steps)
+
+            fallback_map[decision_id] = self._build_runtime_decision_fallback(
+                intent=intent,
+                gate_result=gate_result,
+                state_from=state_from,
+                state_to=state_to,
+                reason=reason,
+                outcome=outcome,
+                action_detail=action_detail,
+            )
+            compact_items.append(
+                {
+                    "decision_id": decision_id,
+                    "intent": intent,
+                    "gate_result": gate_result,
+                    "state_from": state_from,
+                    "state_to": state_to,
+                    "outcome": outcome,
+                    "action": action_detail,
+                    "reason": reason[:120],
+                }
+            )
+
+        if not compact_items or not self.is_model_configured():
+            return fallback_map
+
+        payload = {
+            "model": self._settings.model_default,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是系统运行日志摘要助手。"
+                        "请把机器可读的决策日志转成人类可读的一句话中文。"
+                        "必须准确、客观、简短。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "只输出 JSON，不要 Markdown，不要解释。\n"
+                        '输出 schema: {"items":[{"decision_id":"...","summary":"..."}]}\n'
+                        "要求：\n"
+                        "1) 每条 summary 用中文 18-48 字。\n"
+                        "2) 必须包含：做了什么 + 当前结果。\n"
+                        "3) 禁止输出 UUID、snake_case、状态码、字段名。\n"
+                        f"输入: {json.dumps(compact_items, ensure_ascii=False)}"
+                    ),
+                },
+            ],
+            "temperature": 0.0,
+        }
+
+        parsed = await self._call_json_completion(payload)
+        if not parsed:
+            return fallback_map
+
+        items = parsed.get("items", [])
+        if not isinstance(items, list):
+            return fallback_map
+
+        summaries = dict(fallback_map)
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            decision_id = str(entry.get("decision_id", "")).strip()
+            if not decision_id or decision_id not in summaries:
+                continue
+            raw_summary = str(entry.get("summary", "")).strip()
+            summaries[decision_id] = self._normalize_runtime_summary(
+                raw_summary,
+                fallback=summaries[decision_id],
+            )
+        return summaries
+
+    async def plan_event_execution(
+        self,
+        *,
+        event_summary: str,
+        source: str,
+        source_ref: str,
+        entities: list[str],
+        default_intent: str,
+        default_risk_level: str,
+        default_priority: str,
+        default_reversibility: str,
+        default_requires_confirmation: bool,
+        candidate_steps: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Use LLM to produce a structured executable plan draft for one event."""
+        fallback = {
+            "intent": default_intent,
+            "risk_level": default_risk_level,
+            "priority": default_priority,
+            "reversibility": default_reversibility,
+            "requires_confirmation": bool(default_requires_confirmation),
+            "steps": self._normalize_plan_steps(candidate_steps),
+            "wait_condition": None,
+            "resume_trigger": None,
+        }
+        if not self.is_model_configured():
+            return fallback
+
+        payload = {
+            "model": self._settings.model_default,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是执行计划生成器。请基于事件内容输出可执行计划 JSON，禁止输出解释。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "只输出 JSON，不要 Markdown。\n"
+                        'schema: {"intent":"...","risk_level":"low|medium|high","priority":"P0|P1|P2",'
+                        '"reversibility":"reversible|irreversible","requires_confirmation":true|false,'
+                        '"steps":[{"connector":"...","action_type":"...","payload":{},"verification":{},"retryable":true}],'
+                        '"wait_condition":"...|null","resume_trigger":"...|null"}\n'
+                        "要求：\n"
+                        "1) steps 必须可执行，禁止 noop/placeholder。\n"
+                        "2) 对高风险或不可逆动作，requires_confirmation 必须为 true。\n"
+                        "3) 如果信息不足，保持 steps 为最小安全动作。\n"
+                        f"event_summary: {event_summary}\n"
+                        f"source: {source}\n"
+                        f"source_ref: {source_ref}\n"
+                        f"entities: {json.dumps(entities, ensure_ascii=False)}\n"
+                        f"default_intent: {default_intent}\n"
+                        f"default_risk_level: {default_risk_level}\n"
+                        f"default_priority: {default_priority}\n"
+                        f"default_reversibility: {default_reversibility}\n"
+                        f"default_requires_confirmation: {default_requires_confirmation}\n"
+                        f"candidate_steps: {json.dumps(candidate_steps, ensure_ascii=False)}"
+                    ),
+                },
+            ],
+            "temperature": 0.0,
+        }
+        parsed = await self._call_json_completion(payload)
+        if not parsed:
+            return fallback
+
+        intent = str(parsed.get("intent", default_intent)).strip()[:128] or default_intent
+        risk_level = str(parsed.get("risk_level", default_risk_level)).strip().lower()
+        if risk_level not in {"low", "medium", "high"}:
+            risk_level = default_risk_level
+
+        priority = str(parsed.get("priority", default_priority)).strip().upper()
+        if priority not in {"P0", "P1", "P2"}:
+            priority = default_priority
+
+        reversibility = str(parsed.get("reversibility", default_reversibility)).strip().lower()
+        if reversibility not in {"reversible", "irreversible"}:
+            reversibility = default_reversibility
+
+        requires_confirmation = bool(
+            parsed.get("requires_confirmation", default_requires_confirmation)
+        )
+        if risk_level == "high" or reversibility == "irreversible":
+            requires_confirmation = True
+
+        raw_steps = parsed.get("steps", candidate_steps)
+        steps = self._normalize_plan_steps(raw_steps)
+        if not steps:
+            steps = fallback["steps"]
+
+        wait_condition_raw = parsed.get("wait_condition")
+        wait_condition = (
+            str(wait_condition_raw).strip()[:255]
+            if isinstance(wait_condition_raw, str) and wait_condition_raw.strip()
+            else None
+        )
+        resume_trigger_raw = parsed.get("resume_trigger")
+        resume_trigger = (
+            str(resume_trigger_raw).strip()[:255]
+            if isinstance(resume_trigger_raw, str) and resume_trigger_raw.strip()
+            else None
+        )
+
+        return {
+            "intent": intent,
+            "risk_level": risk_level,
+            "priority": priority,
+            "reversibility": reversibility,
+            "requires_confirmation": requires_confirmation,
+            "steps": steps,
+            "wait_condition": wait_condition,
+            "resume_trigger": resume_trigger,
+        }
+
+    async def reflect_execution_step(
+        self,
+        *,
+        plan_id: str,
+        intent: str,
+        step_index: int,
+        step: dict[str, Any],
+        step_success: bool,
+        step_detail: str,
+        remaining_steps: int,
+    ) -> dict[str, Any]:
+        """Reflect on one executed step and decide continue/halt/replan."""
+        fallback = {
+            "decision": "continue",
+            "summary": "本步骤已完成，继续执行后续步骤。",
+            "next_steps": [],
+        }
+        if not self.is_model_configured():
+            return fallback
+
+        payload = {
+            "model": self._settings.model_default,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是执行反思器。根据步骤执行结果判断是否继续、停止或重规划。只输出 JSON。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "只输出 JSON，不要解释，不要 Markdown。\n"
+                        'schema: {"decision":"continue|halt|replan","summary":"...","next_steps":[...]}'
+                        "\n要求：\n"
+                        "1) 若 decision=continue 或 halt，next_steps 必须为空数组。\n"
+                        "2) 若 decision=replan，next_steps 必须是可执行步骤列表。\n"
+                        "3) summary 用中文一句话，18-48 字。\n"
+                        f"plan_id: {plan_id}\n"
+                        f"intent: {intent}\n"
+                        f"step_index: {step_index}\n"
+                        f"current_step: {json.dumps(step, ensure_ascii=False)}\n"
+                        f"step_success: {step_success}\n"
+                        f"step_detail: {step_detail[:200]}\n"
+                        f"remaining_steps: {remaining_steps}"
+                    ),
+                },
+            ],
+            "temperature": 0.0,
+        }
+        parsed = await self._call_json_completion(payload)
+        if not parsed:
+            return fallback
+
+        decision = str(parsed.get("decision", "continue")).strip().lower()
+        if decision not in {"continue", "halt", "replan"}:
+            decision = "continue"
+
+        summary = self._normalize_runtime_summary(
+            str(parsed.get("summary", "")).strip(),
+            fallback=fallback["summary"],
+        )
+        next_steps = self._normalize_plan_steps(parsed.get("next_steps", []), limit=8)
+        if decision != "replan":
+            next_steps = []
+        if decision == "replan" and not next_steps:
+            decision = "continue"
+
+        return {
+            "decision": decision,
+            "summary": summary,
+            "next_steps": next_steps,
+        }
+
     async def parse_integration_config_text(self, text: str) -> dict[str, Any]:
         """将自然语言转成接入配置字段。"""
         fallback = {"updates": {}, "custom_providers": [], "reason": "model_unavailable"}
@@ -755,6 +1046,112 @@ class ModelGateway:
         if len(text) > 120:
             text = f"{text[:117]}..."
         return text
+
+    def _build_runtime_decision_fallback(
+        self,
+        *,
+        intent: str,
+        gate_result: str,
+        state_from: str,
+        state_to: str,
+        reason: str,
+        outcome: str,
+        action_detail: str,
+    ) -> str:
+        """模型不可用时，生成可读的日志摘要。"""
+        normalized_reason = reason.strip().lower()
+        normalized_outcome = self._normalize_outcome(outcome)
+
+        reason_map = {
+            "low_risk_auto_execute": "系统评估为低风险，已自动放行执行。",
+            "async_execution_completed": "系统已完成自动执行并记录结果。",
+            "execution_engine_disabled": "执行引擎当前关闭，任务未进入自动执行。",
+            "wait_timeout_triggered": "等待外部反馈超时，系统已转回重新评估。",
+            "resume_trigger_matched": "检测到恢复条件，系统已继续执行流程。",
+            "medium_risk_default_to_brief": "事项风险中等，已进入简报待你决策。",
+        }
+        if normalized_reason.startswith("auto_execution_dispatched"):
+            return "系统已通过门禁并加入执行队列，正在后台处理。"
+        if normalized_reason.startswith("step_") and "invalid" in normalized_reason:
+            return "执行前校验未通过，系统已阻止该步骤进入执行。"
+        if normalized_reason in reason_map:
+            return reason_map[normalized_reason]
+
+        gate_text = {
+            "auto": "自动执行",
+            "confirm": "人工确认",
+            "brief": "进入简报",
+            "blocked": "已阻断",
+        }.get(gate_result.strip().lower(), gate_result or "决策")
+        state_map = {
+            "NEW": "新建",
+            "PLANNED": "已计划",
+            "GATED": "已门禁",
+            "RUNNING": "执行中",
+            "SUCCEEDED": "已成功",
+            "FAILED": "已失败",
+            "WAITING": "等待中",
+            "CONFLICTED": "冲突中",
+            "ROLLED_BACK": "已回滚",
+        }
+        from_text = state_map.get(state_from.strip().upper(), state_from.strip() or "未知状态")
+        to_text = state_map.get(state_to.strip().upper(), state_to.strip() or "未知状态")
+
+        sentence = (
+            f"系统对 {intent or '任务'} 做出“{gate_text}”决策，"
+            f"当前从 {from_text} 变更为 {to_text}，"
+            f"动作 {action_detail}，结果 {normalized_outcome}。"
+        )
+        return self._normalize_runtime_summary(
+            sentence,
+            fallback="系统已记录该条决策，详情可在计划中查看。",
+        )
+
+    def _normalize_runtime_summary(self, content: str, *, fallback: str) -> str:
+        """清洗运行日志摘要，避免展示机器码样式。"""
+        text = content.replace("\n", " ").replace("\r", " ").strip()
+        if not text:
+            return fallback
+
+        text = re.sub(r"\b[0-9a-f]{8,}\b", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\b[A-Z_]{2,}\b", "", text)
+        text = re.sub(r"\s{2,}", " ", text).strip(" .|:;，,")
+        if not text:
+            return fallback
+        if len(text) > 120:
+            text = f"{text[:117]}..."
+        return text
+
+    def _normalize_plan_steps(self, raw_steps: Any, *, limit: int = 12) -> list[dict[str, Any]]:
+        """Normalize model/raw plan steps into execution-safe dictionaries."""
+        if not isinstance(raw_steps, list):
+            return []
+
+        normalized: list[dict[str, Any]] = []
+        for item in raw_steps[:limit]:
+            if not isinstance(item, dict):
+                continue
+            connector = str(item.get("connector", "")).strip().lower()
+            action_type = str(item.get("action_type", "")).strip()
+            payload_raw = item.get("payload", {})
+            payload = payload_raw if isinstance(payload_raw, dict) else {}
+            verification_raw = item.get("verification", {})
+            verification = verification_raw if isinstance(verification_raw, dict) else {}
+            retryable = bool(item.get("retryable", True))
+
+            if not connector or not action_type:
+                continue
+
+            normalized.append(
+                {
+                    "connector": connector,
+                    "action_type": action_type,
+                    "payload": payload,
+                    "verification": verification,
+                    "retryable": retryable,
+                }
+            )
+        return normalized
 
     async def _call_json_completion(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         """调用模型并尝试解析 JSON。"""

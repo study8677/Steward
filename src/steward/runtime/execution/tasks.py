@@ -10,7 +10,7 @@ from steward.core.logging import configure_logging, get_logger
 from steward.core.model_config import enforce_model_config
 from steward.domain.enums import DecisionOutcome, GateResult, PlanState
 from steward.domain.state_machine import can_transition
-from steward.infra.db.models import ActionPlan, ExecutionDispatch
+from steward.infra.db.models import ActionPlan, ExecutionDispatch, TaskCandidate
 from steward.infra.db.session import db
 from steward.runtime.execution.attempt_store import AttemptStore
 from steward.runtime.execution.celery_app import celery_app
@@ -57,6 +57,8 @@ async def _run_dispatch_async(dispatch_id: str) -> None:
             await session.commit()
             logger.warning("plan_not_found_for_dispatch", dispatch_id=dispatch_id)
             return
+        task = await session.get(TaskCandidate, plan.task_id)
+        intent = task.intent if task is not None else "follow_up"
 
         await attempt_store.mark_dispatch_started(session, dispatch)
         plan.execution_status = "running"
@@ -66,9 +68,9 @@ async def _run_dispatch_async(dispatch_id: str) -> None:
         await session.flush()
 
         start_index = max(0, int(plan.current_step))
-        for idx, raw_step in enumerate(plan.steps):
-            if idx < start_index:
-                continue
+        idx = start_index
+        while idx < len(plan.steps):
+            raw_step = plan.steps[idx]
 
             if not isinstance(raw_step, dict):
                 plan.execution_status = "failed"
@@ -176,6 +178,33 @@ async def _run_dispatch_async(dispatch_id: str) -> None:
                 await session.commit()
                 return
 
+            reflection = {
+                "decision": "continue",
+                "summary": "本步骤已完成，继续执行后续步骤。",
+                "next_steps": [],
+            }
+            try:
+                reflection = await services.model_gateway.reflect_execution_step(
+                    plan_id=plan.plan_id,
+                    intent=intent,
+                    step_index=idx,
+                    step=raw_step,
+                    step_success=True,
+                    step_detail=result.detail,
+                    remaining_steps=max(0, len(plan.steps) - idx - 1),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "execution_reflection_failed",
+                    plan_id=plan.plan_id,
+                    step_index=idx,
+                    error=str(exc),
+                )
+
+            reflection_summary = str(reflection.get("summary", "")).strip()[:180]
+            attempt_detail = result.detail[:350]
+            if reflection_summary:
+                attempt_detail = f"{attempt_detail} | reflection:{reflection_summary}"
             await attempt_store.record_attempt(
                 session,
                 dispatch_id=dispatch.dispatch_id,
@@ -184,10 +213,84 @@ async def _run_dispatch_async(dispatch_id: str) -> None:
                 step_index=idx,
                 idempotency_key=idempotency_key,
                 status="succeeded",
-                detail=result.detail[:500],
+                detail=attempt_detail[:500],
                 duration_ms=duration_ms,
                 retryable=retryable,
             )
+
+            decision = str(reflection.get("decision", "continue")).strip().lower()
+            if decision == "halt":
+                plan.execution_status = "failed"
+                plan.last_error = f"reflection_halt:{reflection_summary[:140]}"
+                if can_transition(PlanState(plan.state), PlanState.FAILED):
+                    plan.state = PlanState.FAILED.value
+                await attempt_store.mark_dispatch_finished(session, dispatch, status="failed")
+                await services.decision_log_service.append(
+                    session,
+                    plan_id=plan.plan_id,
+                    gate_result=GateResult.AUTO,
+                    state_from=PlanState.RUNNING.value,
+                    state_to=plan.state,
+                    reason=plan.last_error,
+                    outcome=DecisionOutcome.FAILED,
+                )
+                await session.commit()
+                return
+
+            if decision == "replan":
+                next_steps_raw = reflection.get("next_steps", [])
+                next_steps = next_steps_raw if isinstance(next_steps_raw, list) else []
+                valid_steps: list[dict[str, object]] = []
+                for next_step in next_steps:
+                    if not isinstance(next_step, dict):
+                        continue
+                    connector = str(next_step.get("connector", "")).strip().lower()
+                    action_type = str(next_step.get("action_type", "")).strip()
+                    payload_raw = next_step.get("payload", {})
+                    payload = payload_raw if isinstance(payload_raw, dict) else {}
+                    if not connector or not action_type:
+                        continue
+
+                    is_valid, reason = services.connectors.validate_action(
+                        connector=connector,
+                        action_type=action_type,
+                        payload=payload,
+                    )
+                    if not is_valid:
+                        plan.execution_status = "failed"
+                        plan.last_error = f"reflection_replan_invalid:{reason}"
+                        if can_transition(PlanState(plan.state), PlanState.FAILED):
+                            plan.state = PlanState.FAILED.value
+                        await attempt_store.mark_dispatch_finished(
+                            session, dispatch, status="failed"
+                        )
+                        await services.decision_log_service.append(
+                            session,
+                            plan_id=plan.plan_id,
+                            gate_result=GateResult.BLOCKED,
+                            state_from=PlanState.RUNNING.value,
+                            state_to=plan.state,
+                            reason=plan.last_error,
+                            outcome=DecisionOutcome.FAILED,
+                        )
+                        await session.commit()
+                        return
+                    valid_steps.append(next_step)
+
+                if valid_steps:
+                    plan.steps = list(plan.steps[: idx + 1]) + valid_steps
+                    await services.decision_log_service.append(
+                        session,
+                        plan_id=plan.plan_id,
+                        gate_result=GateResult.AUTO,
+                        state_from=PlanState.RUNNING.value,
+                        state_to=PlanState.RUNNING.value,
+                        reason=f"reflection_replan_step_{idx}:{reflection_summary[:80]}",
+                        outcome=DecisionOutcome.SUCCEEDED,
+                    )
+                    await session.flush()
+
+            idx += 1
 
         plan.current_step = len(plan.steps)
         if plan.wait_condition:

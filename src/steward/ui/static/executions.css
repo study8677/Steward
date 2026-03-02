@@ -1,0 +1,238 @@
+.executions-page .layout {
+  width: min(1260px, 94vw);
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card {
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.66);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-sm);
+}
+
+.metric-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.metric-value {
+  margin-top: 4px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.execution-list {
+  gap: 14px;
+}
+
+.execution-card {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  padding: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(246, 251, 248, 0.94));
+  box-shadow: var(--shadow-sm);
+}
+
+.execution-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.execution-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.execution-meta {
+  font-family: var(--font-mono);
+  color: #62706a;
+  font-size: 0.75rem;
+}
+
+.execution-summary {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(18, 84, 70, 0.08);
+  color: #1d5145;
+  font-size: 0.9rem;
+}
+
+.execution-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+.execution-kv {
+  color: #5a6863;
+  font-size: 0.79rem;
+}
+
+.attempts-panel {
+  margin-top: 12px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.14);
+  padding-top: 10px;
+}
+
+.attempts-panel > summary {
+  cursor: pointer;
+  color: #2a4f45;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.attempts-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attempt-item {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.attempt-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.attempt-title {
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.attempt-meta {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: #65736d;
+}
+
+.attempt-detail {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: #263531;
+  line-height: 1.45;
+}
+
+.attempt-error {
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+.attempt-duration {
+  margin-top: 2px;
+  color: #6a7771;
+  font-size: 0.75rem;
+}
+
+.attempt-link {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.attempt-link:hover {
+  text-decoration: underline;
+}
+
+.attempt-raw {
+  margin-top: 8px;
+}
+
+.attempt-raw > summary {
+  cursor: pointer;
+  color: #5b6a65;
+  font-size: 0.78rem;
+}
+
+.attempt-raw-body {
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f6f8f7;
+  color: #4f5f5a;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.badge.status-success {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.badge.status-failed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.badge.status-running {
+  background: rgba(22, 90, 151, 0.12);
+  color: #23659e;
+}
+
+.badge.status-waiting {
+  background: rgba(210, 121, 39, 0.13);
+  color: #8c4f12;
+}
+
+.badge.status-queued {
+  background: rgba(0, 0, 0, 0.08);
+  color: #4f5b57;
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 1060px) {
+  .metric-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .execution-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .executions-page .layout {
+    width: min(1260px, 95vw);
+  }
+
+  .metric-row {
+    grid-template-columns: 1fr;
+  }
+
+  .execution-grid {
+    grid-template-columns: 1fr;
+  }
+}

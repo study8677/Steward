@@ -123,6 +123,19 @@ make run
 - 运行时持久化：`config/integrations.runtime.json`（`config`、`custom_providers`、`mcp_servers`、`skills`）。
 - 兼容说明：`/api/v1/skills` 仅作为兼容层，底层状态与 integrations 共用同一来源。
 
+## 📊 执行结果页面
+
+- Dashboard 入口：
+  - `http://127.0.0.1:8000/dashboard`（主面板）
+  - `http://127.0.0.1:8000/dashboard/executions`（执行结果）
+- `执行结果`页面当前支持：
+  - 状态/触发原因/步骤结果的人话展示
+  - 中英文双语渲染（随页面语言切换）
+  - 对 `record_note` 自动保存记录提供“打开记录”入口
+- 相关接口：
+  - `GET /api/v1/dashboard/executions?limit=50&lang=zh|en`
+  - `GET /api/v1/dashboard/records/{filename}`（安全读取 journal markdown 记录）
+
 ## 🏗️ 架构概览
 
 ```

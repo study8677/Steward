@@ -5,6 +5,7 @@ const i18n = {
     language_switch: "语言切换",
     last_updated: "最后刷新：",
     btn_integrations: "信息源管理",
+    btn_executions: "执行结果",
     btn_refresh: "立即刷新",
     btn_send: "发送",
     connectors: "连接器健康",
@@ -63,6 +64,7 @@ const i18n = {
     language_switch: "Language switch",
     last_updated: "Last updated:",
     btn_integrations: "Integrations",
+    btn_executions: "Executions",
     btn_refresh: "Refresh Now",
     btn_send: "Send",
     connectors: "Connector Health",
@@ -182,6 +184,7 @@ const eventSubmitBtn = eventFormEl.querySelector("button[type='submit']");
 const eventInputHintEl = document.getElementById("event-input-hint");
 
 const openDrawerBtn = document.getElementById("open-integrations-btn");
+const openExecutionsBtn = document.getElementById("open-executions-btn");
 const langSwitchEl = document.getElementById("lang-switch");
 
 let hasInitializedSnapshot = false;
@@ -205,6 +208,7 @@ function applyI18n() {
   document.getElementById("logs-title").textContent = t("runtime_logs");
 
   openDrawerBtn.textContent = t("btn_integrations");
+  openExecutionsBtn.textContent = t("btn_executions");
   refreshBtn.textContent = t("btn_refresh");
   eventSubmitBtn.textContent = t("btn_send");
   briefSettingsSaveBtn.textContent = t("brief_save");

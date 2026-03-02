@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#125446" />
+  <title>Steward Execution Results</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/ui/dashboard.css" />
+  <link rel="stylesheet" href="/ui/executions.css" />
+</head>
+
+<body class="executions-page">
+  <a href="#main-content" class="skip-link">跳到主内容</a>
+
+  <div class="bg-mesh">
+    <div class="bg-shape shape-1"></div>
+    <div class="bg-shape shape-2"></div>
+    <div class="bg-shape shape-3"></div>
+  </div>
+
+  <main id="main-content" class="layout">
+    <header class="hero glass-panel">
+      <div class="hero-content">
+        <h1 id="page-title">执行结果中心</h1>
+        <p id="page-subtitle">查看自动执行链路的真实状态、步骤细节与失败原因。</p>
+      </div>
+      <div class="hero-actions">
+        <span id="last-updated" class="text-sm muted">最后刷新：--</span>
+        <select id="lang-switch" class="btn btn-secondary btn-sm lang-switch" aria-label="语言切换">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+        <button id="refresh-btn" class="btn btn-secondary" type="button">刷新结果</button>
+        <a id="back-dashboard-btn" class="btn btn-primary" href="/dashboard">返回 Dashboard</a>
+      </div>
+    </header>
+
+    <section class="metric-row">
+      <article class="metric-card">
+        <div class="metric-label" id="metric-total-title">最近分发</div>
+        <div class="metric-value" id="metric-total-value">0</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label" id="metric-running-title">进行中</div>
+        <div class="metric-value" id="metric-running-value">0</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label" id="metric-succeeded-title">成功</div>
+        <div class="metric-value" id="metric-succeeded-value">0</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label" id="metric-failed-title">失败</div>
+        <div class="metric-value" id="metric-failed-value">0</div>
+      </article>
+    </section>
+
+    <section class="card">
+      <div class="card-header">
+        <h2 id="list-title">执行记录</h2>
+        <span id="list-count" class="badge">0</span>
+      </div>
+      <p id="empty-text" class="muted text-sm hidden">暂无执行记录</p>
+      <div id="execution-list" class="list execution-list" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script src="/ui/executions.js" defer></script>
+</body>
+
+</html>

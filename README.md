@@ -122,6 +122,19 @@ make run
 - Runtime persistence: `config/integrations.runtime.json` (`config`, `custom_providers`, `mcp_servers`, `skills`).
 - Compatibility note: `/api/v1/skills` remains as a compatibility facade, backed by the same integration state.
 
+## 📊 Execution Results Page
+
+- Dashboard entries:
+  - `http://127.0.0.1:8000/dashboard` (main)
+  - `http://127.0.0.1:8000/dashboard/executions` (execution results)
+- `Executions` view now includes:
+  - human-readable summaries for dispatch status/trigger/step outcomes
+  - bilingual rendering (`zh/en`) based on current UI language
+  - direct link to open saved manual notes (`record_note`) from the page
+- Core APIs:
+  - `GET /api/v1/dashboard/executions?limit=50&lang=zh|en`
+  - `GET /api/v1/dashboard/records/{filename}` (safe markdown record read for journal notes)
+
 ## 🏗️ Architecture
 
 ```

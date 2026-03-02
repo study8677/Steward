@@ -24,3 +24,11 @@ async def dashboard_integrations_page() -> FileResponse:
     root = Path(__file__).resolve().parents[2]
     html_path = root / "ui" / "static" / "integrations.html"
     return FileResponse(html_path)
+
+
+@router.get("/dashboard/executions")
+async def dashboard_executions_page() -> FileResponse:
+    """返回执行结果页面。"""
+    root = Path(__file__).resolve().parents[2]
+    html_path = root / "ui" / "static" / "executions.html"
+    return FileResponse(html_path)
