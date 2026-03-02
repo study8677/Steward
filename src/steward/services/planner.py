@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,10 +34,12 @@ class PlannerService:
         plan_compiler: PlanCompiler | None = None,
         execution_policy: ExecutionPolicy | None = None,
         model_gateway: ModelGateway | None = None,
+        workspace_dir: str | Path | None = None,
     ) -> None:
         self._plan_compiler = plan_compiler or PlanCompiler()
         self._execution_policy = execution_policy or ExecutionPolicy()
         self._model_gateway = model_gateway
+        self._workspace_dir = Path(workspace_dir).expanduser() if workspace_dir else Path.cwd()
 
     async def build_plan(
         self,
@@ -51,7 +54,7 @@ class PlannerService:
         reversibility = (
             Reversibility.IRREVERSIBLE if risk_level == RiskLevel.HIGH else Reversibility.REVERSIBLE
         )
-        raw_steps = self._build_steps(event, intent)
+        raw_steps = await self._build_steps(event, intent)
         requires_confirmation = reversibility == Reversibility.IRREVERSIBLE
         wait_condition: str | None = None
         resume_trigger: str | None = None
@@ -188,13 +191,31 @@ class PlannerService:
             return PriorityLevel.P1
         return PriorityLevel.P2
 
-    def _build_steps(self, event: ContextEvent, intent: str) -> list[dict[str, object]]:
+    async def _build_steps(self, event: ContextEvent, intent: str) -> list[dict[str, object]]:
         """构建执行步骤。"""
         if event.source == "github":
+            if await self._is_self_generated_github_comment(event):
+                return [
+                    {
+                        "connector": "manual",
+                        "action_type": "record_note",
+                        "payload": {
+                            "summary": "Skip self-generated GitHub comment event to avoid reply loop.",
+                            "intent": "observe",
+                        },
+                    }
+                ]
             parsed = self._parse_github_ref(event.source_ref)
             if parsed is None:
                 return []
             owner, repo, issue_number = parsed
+            body = await self._build_github_issue_reply(
+                event=event,
+                intent=intent,
+                owner=owner,
+                repo=repo,
+                issue_number=issue_number,
+            )
             return [
                 {
                     "connector": "github",
@@ -203,7 +224,7 @@ class PlannerService:
                         "owner": owner,
                         "repo": repo,
                         "issue_number": issue_number,
-                        "body": f"Steward 自动跟进：{intent}",
+                        "body": body,
                     },
                 }
             ]
@@ -254,6 +275,55 @@ class PlannerService:
             ]
 
         return []
+
+    async def _build_github_issue_reply(
+        self,
+        *,
+        event: ContextEvent,
+        intent: str,
+        owner: str,
+        repo: str,
+        issue_number: int,
+    ) -> str:
+        if self._model_gateway is None:
+            return self._fallback_github_reply(event.summary)
+        repo_context = self._model_gateway.build_local_repo_context(
+            workspace_dir=self._workspace_dir,
+            file_limit=3,
+        )
+        reply = await self._model_gateway.compose_github_issue_reply(
+            owner=owner,
+            repo=repo,
+            issue_number=issue_number,
+            event_summary=event.summary,
+            intent=intent,
+            repo_context=repo_context,
+        )
+        return reply or self._fallback_github_reply(event.summary)
+
+    def _fallback_github_reply(self, summary: str) -> str:
+        compact = summary.strip()[:160] or "issue update"
+        return (
+            f"收到你的反馈：{compact}。\n"
+            "当前仓库已具备事件接入、规划、异步执行与执行日志能力，后续会基于仓库上下文继续跟进。\n"
+            "建议补充复现步骤和期望结果，便于更精准处理。\n\n"
+            f"We received your feedback: {compact}.\n"
+            "The repository already includes event ingest, planning, async execution, and execution logs. We will continue based on repository context.\n"
+            "Please share repro steps and expected behavior for a more precise follow-up."
+        )
+
+    async def _is_self_generated_github_comment(self, event: ContextEvent) -> bool:
+        if event.source != "github":
+            return False
+        summary = event.summary.lower()
+        if "steward 自动跟进" in summary or "steward auto follow-up" in summary:
+            return True
+        entities = {item.strip().lower() for item in event.entity_set if isinstance(item, str)}
+        if "issue_comment" not in entities:
+            return False
+        if self._model_gateway is None:
+            return False
+        return await self._model_gateway.is_github_actor_self(event.actor)
 
     def _parse_github_ref(self, source_ref: str) -> tuple[str, str, int] | None:
         match = self._github_ref.search(source_ref)

@@ -120,8 +120,20 @@ make run
   - `POST /api/v1/integrations/nl`
   - `POST /api/v1/integrations/mcp/{server}/configure|enable|disable`
   - `POST /api/v1/integrations/skills/{skill}/configure|enable|disable`
+- GitHub Issue 感知：
+  - Webhook 回调地址：`POST /api/v1/webhooks/providers/github`
+  - 通过 `STEWARD_GITHUB_WEBHOOK_SECRET`（或 integrations API/NL）配置密钥
+  - 在 GitHub Webhook 事件里勾选 `issues`、`issue_comment`、`pull_request`
+  - GitHub 自动回复已改为 agent 化：结合 issue 内容 + 本地仓库上下文生成中英双语回复
+  - `issue_comment` 防循环：仅跳过 bot 自己发出的评论；用户评论仍可触发后续回复
 - 运行时持久化：`config/integrations.runtime.json`（`config`、`custom_providers`、`mcp_servers`、`skills`）。
 - 兼容说明：`/api/v1/skills` 仅作为兼容层，底层状态与 integrations 共用同一来源。
+
+### 安全说明（密钥）
+
+- 不要提交 `.env` 或任何真实 token/secret。
+- `.env.example` 仅保留占位示例。
+- `config/integrations.runtime.json` 属于运行时状态；若含真实密钥，请先轮换并避免进入 Git 历史。
 
 ## 📊 执行结果页面
 

@@ -119,8 +119,20 @@ make run
   - `POST /api/v1/integrations/nl`
   - `POST /api/v1/integrations/mcp/{server}/configure|enable|disable`
   - `POST /api/v1/integrations/skills/{skill}/configure|enable|disable`
+- GitHub issue sensing:
+  - Webhook callback: `POST /api/v1/webhooks/providers/github`
+  - Configure webhook secret via `STEWARD_GITHUB_WEBHOOK_SECRET` (or integrations API/NL)
+  - In GitHub Webhook events, enable `issues`, `issue_comment`, `pull_request`
+  - GitHub auto reply is now agentic: uses issue content + local repo context to generate bilingual replies
+  - `issue_comment` loop protection: self-authored bot comments are skipped; user comments can still trigger follow-up
 - Runtime persistence: `config/integrations.runtime.json` (`config`, `custom_providers`, `mcp_servers`, `skills`).
 - Compatibility note: `/api/v1/skills` remains as a compatibility facade, backed by the same integration state.
+
+### Security Notes (Secrets)
+
+- Do not commit `.env` or real tokens/secrets.
+- Keep only placeholders in `.env.example`.
+- `config/integrations.runtime.json` is runtime state; if it contains real secrets, rotate them and keep them out of Git history.
 
 ## 📊 Execution Results Page
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -31,6 +32,7 @@ class ModelGateway:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._logger = structlog.get_logger("model_gateway")
+        self._github_actor_login: str | None = None
 
     def is_model_configured(self) -> bool:
         """模型 API 是否可用。"""
@@ -541,6 +543,89 @@ class ModelGateway:
             "next_steps": next_steps,
         }
 
+    async def compose_github_issue_reply(
+        self,
+        *,
+        owner: str,
+        repo: str,
+        issue_number: int,
+        event_summary: str,
+        intent: str,
+        repo_context: str,
+    ) -> str:
+        """Compose a contextual GitHub issue reply using issue + local repo context."""
+        issue_context = await self._fetch_github_issue_context(
+            owner=owner,
+            repo=repo,
+            issue_number=issue_number,
+        )
+        fallback = self._build_github_issue_reply_fallback(
+            owner=owner,
+            repo=repo,
+            issue_number=issue_number,
+            event_summary=event_summary,
+            issue_context=issue_context,
+            repo_context=repo_context,
+        )
+        if not self.is_model_configured():
+            return fallback
+
+        payload = {
+            "model": self._settings.model_default,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是仓库协作助手。请基于 Issue 内容和仓库上下文，"
+                        "生成可直接发布到 GitHub issue 的回复。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "输出要求：\n"
+                        "1) 输出纯文本，不要 Markdown 标题，不要代码块。\n"
+                        "2) 必须中英双语，先中文再英文。\n"
+                        "3) 每种语言 2-5 行，总长度 120-420 字符。\n"
+                        "4) 必须包含：你理解的问题 + 当前仓库已具备能力 + 下一步建议。\n"
+                        "5) 禁止虚构尚未实现的能力；无法确认时用“建议确认/please verify”。\n"
+                        "6) 语气专业、简洁，避免模板化口头禅。\n"
+                        f"repo: {owner}/{repo}\n"
+                        f"issue_number: {issue_number}\n"
+                        f"intent: {intent}\n"
+                        f"event_summary: {event_summary}\n"
+                        f"issue_context_json: {json.dumps(issue_context, ensure_ascii=False)}\n"
+                        f"repo_context: {repo_context[:5000]}"
+                    ),
+                },
+            ],
+            "temperature": 0.2,
+        }
+
+        timeout = self._settings.model_timeout_ms / 1000
+        headers = {
+            "Authorization": f"Bearer {self._settings.model_api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    f"{self._settings.model_base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+        except httpx.HTTPError:
+            return fallback
+        if response.status_code >= 400:
+            return fallback
+
+        data = response.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return fallback
+        content = str(choices[0].get("message", {}).get("content", "")).strip()
+        return self._normalize_github_issue_reply(content, fallback=fallback)
+
     async def parse_integration_config_text(self, text: str) -> dict[str, Any]:
         """将自然语言转成接入配置字段。"""
         fallback = {"updates": {}, "custom_providers": [], "reason": "model_unavailable"}
@@ -589,6 +674,175 @@ class ModelGateway:
             "custom_providers": custom_providers,
             "reason": reason[:80],
         }
+
+    async def is_github_actor_self(self, login: str) -> bool:
+        """Check whether the given GitHub login matches current token owner."""
+        actor = login.strip().lower()
+        if not actor:
+            return False
+        current = await self._get_github_actor_login()
+        if not current:
+            return False
+        return actor == current.lower()
+
+    async def _fetch_github_issue_context(
+        self,
+        *,
+        owner: str,
+        repo: str,
+        issue_number: int,
+    ) -> dict[str, Any]:
+        """Fetch issue title/body/comments for grounded reply generation."""
+        empty: dict[str, Any] = {"title": "", "body": "", "comments": []}
+        token = self._settings.github_token.strip()
+        if not token:
+            return empty
+
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Authorization": f"Bearer {token}",
+        }
+        issue_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
+        comments_url = f"{issue_url}/comments"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                issue_resp = await client.get(issue_url, headers=headers)
+                comments_resp = await client.get(
+                    comments_url,
+                    headers=headers,
+                    params={"per_page": "3", "sort": "created", "direction": "desc"},
+                )
+        except httpx.HTTPError:
+            return empty
+        if issue_resp.status_code >= 400:
+            return empty
+
+        issue_data = issue_resp.json() if issue_resp.content else {}
+        comments_data = comments_resp.json() if comments_resp.status_code < 400 else []
+        title = ""
+        body = ""
+        if isinstance(issue_data, dict):
+            title = str(issue_data.get("title", "")).strip()
+            body = str(issue_data.get("body", "")).strip()
+
+        comments: list[dict[str, str]] = []
+        if isinstance(comments_data, list):
+            for item in comments_data[:3]:
+                if not isinstance(item, dict):
+                    continue
+                user = item.get("user", {})
+                login = str(user.get("login", "")) if isinstance(user, dict) else ""
+                comment_body = str(item.get("body", "")).strip()
+                if not comment_body:
+                    continue
+                comments.append({"author": login, "body": comment_body[:400]})
+
+        return {
+            "title": title[:300],
+            "body": body[:1500],
+            "comments": comments,
+        }
+
+    async def _get_github_actor_login(self) -> str:
+        """Resolve GitHub login bound to configured token."""
+        if self._github_actor_login is not None:
+            return self._github_actor_login
+        token = self._settings.github_token.strip()
+        if not token:
+            self._github_actor_login = ""
+            return ""
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Authorization": f"Bearer {token}",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get("https://api.github.com/user", headers=headers)
+        except httpx.HTTPError:
+            self._github_actor_login = ""
+            return ""
+        if response.status_code >= 400:
+            self._github_actor_login = ""
+            return ""
+        data = response.json()
+        login = str(data.get("login", "")).strip() if isinstance(data, dict) else ""
+        self._github_actor_login = login
+        return login
+
+    def _build_github_issue_reply_fallback(
+        self,
+        *,
+        owner: str,
+        repo: str,
+        issue_number: int,
+        event_summary: str,
+        issue_context: dict[str, Any],
+        repo_context: str,
+    ) -> str:
+        """Deterministic bilingual fallback when model/network is unavailable."""
+        title = str(issue_context.get("title", "")).strip()
+        body = str(issue_context.get("body", "")).strip()
+        top_line = title or event_summary or f"Issue #{issue_number}"
+        zh_capability = "已接入规划、门禁、异步执行与执行日志。"
+        if "github webhook" in repo_context.lower() or "webhook" in repo_context.lower():
+            zh_capability = "当前仓库已接入 GitHub webhook、计划生成、worker 异步执行与结果追踪。"
+        en_capability = "The repo already supports GitHub webhook ingestion, planning, async worker execution, and execution tracing."
+        zh = (
+            f"已收到并理解这个问题：{top_line[:120]}。\n"
+            f"{zh_capability}\n"
+            "建议下一步：请补充可复现步骤/期望结果，我们会基于仓库现状继续细化处理。"
+        )
+        en = (
+            f"Got it. We understand this request: {top_line[:120]}.\n"
+            f"{en_capability}\n"
+            "Next step: please add reproduction steps and expected behavior; we will refine the follow-up based on the current codebase."
+        )
+        if body:
+            zh = f"{zh}\n补充说明：已读取 issue 描述并纳入判断。"
+            en = f"{en}\nAdditional note: the issue description has been considered."
+        return self._normalize_github_issue_reply(f"{zh}\n\n{en}", fallback=f"{zh}\n\n{en}")
+
+    def _normalize_github_issue_reply(self, content: str, *, fallback: str) -> str:
+        """Normalize generated issue reply for safe posting."""
+        text = content.replace("\r", "").strip()
+        if not text:
+            return fallback
+        text = re.sub(r"```[\s\S]*?```", "", text).strip()
+        if not text:
+            return fallback
+        if len(text) > 1200:
+            text = text[:1200].rstrip()
+        if len(text) < 60:
+            return fallback
+        return text
+
+    def build_local_repo_context(
+        self,
+        *,
+        workspace_dir: str | Path,
+        file_limit: int = 3,
+    ) -> str:
+        """Load a compact local repository context snippet for grounded responses."""
+        base = Path(workspace_dir).expanduser().resolve()
+        candidates = ["README.md", "README_CN.md", "agent.md", "AGENTS.md"]
+        chunks: list[str] = []
+        for name in candidates:
+            if len(chunks) >= file_limit:
+                break
+            path = base / name
+            if not path.exists() or not path.is_file():
+                continue
+            try:
+                raw = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            normalized = re.sub(r"\s+", " ", raw).strip()
+            if not normalized:
+                continue
+            chunks.append(f"[{name}] {normalized[:1200]}")
+        return "\n".join(chunks)
 
     async def parse_natural_language_event_text(self, text: str) -> dict[str, Any]:
         """将自然语言描述解析为事件字段。"""

@@ -43,6 +43,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestCli
     monkeypatch.setenv("STEWARD_INTEGRATION_RUNTIME_FILE", str(integration_runtime_path))
     monkeypatch.setenv("STEWARD_BRIEF_RUNTIME_FILE", str(brief_runtime_path))
     monkeypatch.setenv("STEWARD_GITHUB_TOKEN", "")
+    monkeypatch.setenv("STEWARD_GITHUB_WEBHOOK_SECRET", "github-test-secret")
     monkeypatch.setenv("STEWARD_SLACK_SIGNING_SECRET", "slack-test-secret")
     monkeypatch.setenv("STEWARD_GMAIL_PUBSUB_VERIFICATION_TOKEN", "gmail-token")
     monkeypatch.setenv("STEWARD_GOOGLE_CALENDAR_CHANNEL_TOKEN", "calendar-token")

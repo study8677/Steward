@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from steward.api.deps import get_services, get_session
 from steward.connectors.normalizers import normalize_webhook_payload
 from steward.connectors.provider_adapters import (
+    GitHubWebhookAdapter,
     GmailWebhookAdapter,
     GoogleCalendarWebhookAdapter,
     SlackWebhookAdapter,
@@ -187,6 +188,43 @@ async def slack_provider_webhook(
         provider="slack",
         event_request=event_request,
         dedup_key=dedup_key,
+    )
+
+
+@router.post("/providers/github", response_model=EventIngestResponse)
+async def github_provider_webhook(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    services: ServiceContainer = Depends(get_services),
+) -> EventIngestResponse | dict[str, str]:
+    """接收并验证 GitHub webhook（issues / issue_comment / pull_request）。"""
+    raw_body = await request.body()
+    headers = _headers_to_lower_dict(request)
+
+    adapter = GitHubWebhookAdapter(services.settings)
+    verified = adapter.verify(raw_body, headers)
+    if not verified.ok:
+        raise HTTPException(status_code=401, detail=verified.reason)
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="invalid_json") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="invalid_payload")
+
+    event_type = str(headers.get("x-github-event", "")).strip().lower()
+    if event_type in {"ping"}:
+        return {"status": "ok"}
+
+    event_request = adapter.normalize(payload, event_type=event_type or "event")
+    return await _ingest_with_backpressure(
+        request=request,
+        session=session,
+        services=services,
+        provider="github",
+        event_request=event_request,
+        dedup_key=verified.dedup_key,
     )
 
 

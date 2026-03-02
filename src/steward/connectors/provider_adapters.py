@@ -1,4 +1,4 @@
-"""真实 Provider Webhook 适配器：Gmail/Slack/Google Calendar。"""
+"""真实 Provider Webhook 适配器：GitHub/Gmail/Slack/Google Calendar。"""
 
 from __future__ import annotations
 
@@ -79,6 +79,98 @@ class SlackWebhookAdapter:
             confidence=0.9,
             raw_ref=event_id or None,
             entities=["slack", channel, event_type],
+        )
+
+
+class GitHubWebhookAdapter:
+    """GitHub 事件适配器（Issue/PR/comment）。"""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    def verify(self, raw_body: bytes, headers: dict[str, str]) -> VerificationResult:
+        """校验 GitHub HMAC 签名。"""
+        event = headers.get("x-github-event", "").strip()
+        delivery = headers.get("x-github-delivery", "").strip()
+        if not event:
+            return VerificationResult(ok=False, reason="github_event_missing")
+        if not delivery:
+            return VerificationResult(ok=False, reason="github_delivery_missing")
+
+        secret = self._settings.github_webhook_secret.strip()
+        if not secret:
+            return VerificationResult(ok=False, reason="github_webhook_secret_missing")
+
+        signature = headers.get("x-hub-signature-256", "").strip()
+        if not signature.startswith("sha256="):
+            return VerificationResult(ok=False, reason="github_signature_missing")
+
+        digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+        expected = f"sha256={digest}"
+        if not hmac.compare_digest(expected, signature):
+            return VerificationResult(ok=False, reason="github_signature_mismatch")
+
+        return VerificationResult(ok=True, reason="ok", dedup_key=delivery)
+
+    def normalize(self, payload: dict[str, Any], *, event_type: str) -> EventIngestRequest:
+        """标准化 GitHub webhook 事件。"""
+        action = str(payload.get("action", "updated")).strip() or "updated"
+        sender = payload.get("sender", {})
+        actor = str(sender.get("login", "github")) if isinstance(sender, dict) else "github"
+        repo = payload.get("repository", {})
+        repo_full = (
+            str(repo.get("full_name", "unknown/unknown"))
+            if isinstance(repo, dict)
+            else "unknown/unknown"
+        )
+
+        issue = payload.get("issue", {})
+        pr = payload.get("pull_request", {})
+        comment = payload.get("comment", {})
+
+        summary = f"GitHub {event_type} {action}"
+        source_ref = f"github:{event_type}:{repo_full}"
+        entities = ["github", repo_full, event_type, action]
+
+        if isinstance(issue, dict) and issue:
+            number = int(issue.get("number", 0) or 0)
+            title = str(issue.get("title", "")).strip()
+            issue_body = str(issue.get("body", "")).strip()
+            source_ref = f"github:issue:{repo_full}#{number}" if number > 0 else source_ref
+            summary = f"[{repo_full}] Issue #{number} {action}: {title or '(no title)'}"
+            if issue_body:
+                summary = f"{summary} | body: {issue_body[:120]}"
+            entities.append(f"issue#{number}")
+        elif isinstance(pr, dict) and pr:
+            number = int(pr.get("number", 0) or 0)
+            title = str(pr.get("title", "")).strip()
+            pr_body = str(pr.get("body", "")).strip()
+            source_ref = f"github:pr:{repo_full}#{number}" if number > 0 else source_ref
+            summary = f"[{repo_full}] PR #{number} {action}: {title or '(no title)'}"
+            if pr_body:
+                summary = f"{summary} | body: {pr_body[:120]}"
+            entities.append(f"pr#{number}")
+
+        if isinstance(comment, dict) and comment:
+            body = str(comment.get("body", "")).strip()
+            comment_user = comment.get("user", {})
+            comment_author = (
+                str(comment_user.get("login", "")).strip() if isinstance(comment_user, dict) else ""
+            )
+            if body:
+                summary = f"{summary} | comment: {body[:80]}"
+            if comment_author:
+                summary = f"{summary} | by: {comment_author}"
+            entities.append("comment")
+
+        return EventIngestRequest(
+            source=SourceType.GITHUB,
+            source_ref=source_ref,
+            actor=actor,
+            summary=summary,
+            confidence=0.93,
+            raw_ref=source_ref,
+            entities=entities,
         )
 
 

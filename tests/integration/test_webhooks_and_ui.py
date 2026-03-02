@@ -130,11 +130,37 @@ def test_google_calendar_provider_adapter(client: TestClient) -> None:
     assert response.json()["space_id"].startswith("SPACE_")
 
 
+def test_github_provider_signature_and_issue_event(client: TestClient) -> None:
+    """GitHub provider 路由应校验签名并接收 issue 事件。"""
+    payload = {
+        "action": "opened",
+        "repository": {"full_name": "owner/repo"},
+        "sender": {"login": "octocat"},
+        "issue": {
+            "number": 42,
+            "title": "Fix production bug",
+            "body": "Need urgent follow-up",
+        },
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    digest = hmac.new(b"github-test-secret", raw, hashlib.sha256).hexdigest()
+    headers = {
+        "content-type": "application/json",
+        "x-github-event": "issues",
+        "x-github-delivery": "delivery-42",
+        "x-hub-signature-256": f"sha256={digest}",
+    }
+    response = client.post("/api/v1/webhooks/providers/github", content=raw, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["space_id"].startswith("SPACE_")
+
+
 def test_integration_status_and_nl_apply(client: TestClient) -> None:
     """信息源配置应支持状态查询与自然语言应用。"""
     before = client.get("/api/v1/integrations")
     assert before.status_code == 200
     providers = before.json().get("providers", [])
+    assert any(item.get("provider") == "github" for item in providers)
     assert any(item.get("provider") == "slack" for item in providers)
     assert any(item.get("provider") == "screen" for item in providers)
 

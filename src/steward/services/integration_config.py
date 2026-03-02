@@ -20,18 +20,21 @@ class IntegrationConfigService:
     """管理运行时接入配置（legacy provider + MCP + skills）。"""
 
     _builtin_provider_fields = {
+        "github": ["github_webhook_secret"],
         "slack": ["slack_signing_secret"],
         "gmail": ["gmail_pubsub_verification_token", "gmail_pubsub_topic"],
         "google-calendar": ["google_calendar_channel_token", "google_calendar_channel_ids"],
         "screen": ["screen_webhook_secret"],
     }
     _builtin_provider_source = {
+        "github": "github",
         "slack": "chat",
         "gmail": "email",
         "google-calendar": "calendar",
         "screen": "screen",
     }
     _builtin_provider_webhook_path = {
+        "github": "/api/v1/webhooks/providers/github",
         "slack": "/api/v1/webhooks/providers/slack",
         "gmail": "/api/v1/webhooks/providers/gmail",
         "google-calendar": "/api/v1/webhooks/providers/google-calendar",
@@ -336,6 +339,12 @@ class IntegrationConfigService:
             webhook_url = self._webhook_url(
                 provider=normalized_provider, base_url=base_url, custom=False
             )
+            if normalized_provider == "github":
+                return (
+                    f"GitHub Webhook 回调地址填写 {webhook_url}，"
+                    "事件勾选 issues、issue_comment、pull_request；"
+                    "并在自然语言配置里提供 github webhook secret。"
+                )
             if normalized_provider == "slack":
                 return (
                     f"Slack Event Subscriptions 回调地址填写 {webhook_url}，"
@@ -714,6 +723,7 @@ class IntegrationConfigService:
     def _filter_updates(self, raw_updates: dict[str, Any]) -> dict[str, str]:
         """过滤 legacy 可写字段并标准化。"""
         allowed_fields = {
+            "github_webhook_secret",
             "slack_signing_secret",
             "gmail_pubsub_verification_token",
             "gmail_pubsub_topic",
@@ -744,6 +754,18 @@ class IntegrationConfigService:
             ).strip()
             if secret:
                 updates["slack_signing_secret"] = secret
+            return updates
+
+        if provider == "github":
+            secret = str(
+                values.get("github_webhook_secret")
+                or values.get("webhook_secret")
+                or values.get("secret")
+                or values.get("token")
+                or ""
+            ).strip()
+            if secret:
+                updates["github_webhook_secret"] = secret
             return updates
 
         if provider == "gmail":
@@ -997,6 +1019,7 @@ class IntegrationConfigService:
         payload = {
             "updated_at": datetime.now(UTC).isoformat(),
             "config": {
+                "github_webhook_secret": self._settings.github_webhook_secret,
                 "slack_signing_secret": self._settings.slack_signing_secret,
                 "gmail_pubsub_verification_token": self._settings.gmail_pubsub_verification_token,
                 "gmail_pubsub_topic": self._settings.gmail_pubsub_topic,
@@ -1100,6 +1123,14 @@ class IntegrationConfigService:
         )
         if screen_secret_match:
             updates["screen_webhook_secret"] = screen_secret_match.group(1).strip()
+
+        github_secret_match = re.search(
+            r"(?:github[^\n]{0,40}(?:webhook)?[^\n]{0,10}(?:secret|token|密钥|令牌)[^\n]{0,12}[:=： ]\s*)([A-Za-z0-9._\-]+)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if github_secret_match:
+            updates["github_webhook_secret"] = github_secret_match.group(1).strip()
 
         return updates
 
