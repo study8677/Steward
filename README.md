@@ -36,15 +36,11 @@ Steward is your digital chief of staff — it silently monitors emails, GitHub, 
 ## 📸 Dashboard Preview
 
 <p align="center">
-  <img src="docs/images/dashboard_overview.png" width="100%" alt="Dashboard Overview — KPI cards, pending plans, conflict tickets">
+  <img src="docs/screenshots/dashboard.png" width="100%" alt="Dashboard — Pending plans, connector health, natural language input, briefs & logs">
 </p>
 
 <p align="center">
-  <img src="docs/images/dashboard_connectors.png" width="100%" alt="Connector Health & Natural Language Input">
-</p>
-
-<p align="center">
-  <img src="docs/images/dashboard_brief.png" width="100%" alt="LLM-powered Natural Language Brief & Runtime Logs">
+  <img src="docs/screenshots/integrations.png" width="100%" alt="Capability Hub — MCP Servers & Skills management with NL config">
 </p>
 
 ## 🚀 Quick Start
@@ -78,6 +74,11 @@ An interactive wizard walks you through setup:
 🚀 All set! Starting Steward...
    Dashboard:  http://127.0.0.1:8000/dashboard
 ```
+
+Quick Start also includes an optional capability step:
+- `GitHub Agent Bundle` (recommended): enables GitHub MCP + detected local skills (`gh-address-comments`, `gh-fix-ci`, `playwright`, `gog`, `self-improving-agent`, `github-api-gateway`).
+- If a skill is not installed locally, the wizard reports it and you can enable it later in `/dashboard/integrations`.
+- You can also link project-local skills to Codex with `make install-skills`.
 
 This mode is great for local exploration of API/UI and manual confirmation flows.
 
@@ -123,8 +124,10 @@ make run
   - Webhook callback: `POST /api/v1/webhooks/providers/github`
   - Configure webhook secret via `STEWARD_GITHUB_WEBHOOK_SECRET` (or integrations API/NL)
   - In GitHub Webhook events, enable `issues`, `issue_comment`, `pull_request`
+  - Low-risk GitHub issues/comments can be silently auto-replied (no manual confirm) through `plan -> gate(auto) -> worker execute`
   - GitHub auto reply is now agentic: uses issue content + local repo context to generate bilingual replies
   - `issue_comment` loop protection: self-authored bot comments are skipped; user comments can still trigger follow-up
+  - Status: currently under active prompt/policy tuning for reply quality and false-positive control
 - Runtime persistence: `config/integrations.runtime.json` (`config`, `custom_providers`, `mcp_servers`, `skills`).
 - Compatibility note: `/api/v1/skills` remains as a compatibility facade, backed by the same integration state.
 
@@ -164,22 +167,28 @@ Signal Sources (GitHub / Email / Calendar / Screen / MCP / Skill)
           │
           ▼
    ┌─────────────┐
-   │ Policy Gate  │  ← Risk assessment, confidence, interruption budget
+   │  Planner     │  ← Intent inference → single agent_execute step
    └──────┬──────┘
           │
           ▼
    ┌─────────────┐
-   │ Async Dispatch│ ← Celery + Redis queue
+   │ Policy Gate  │  ← Risk assessment, confidence, interruption budget
    └──────┬──────┘
           │
-     ┌────┴────┐
-     ▼         ▼
-  Worker Exec Ask User
-     │         │
-     ▼         ▼
-   ┌─────────────┐
-   │ Brief & Audit│  ← NL summaries + execution attempts
-   └─────────────┘
+          ▼
+   ┌────────────────┐
+   │ ExecutionAgent  │  ← LiteLLM acompletion() ReAct Loop
+   │  (Tool Calling) │     Think → Tool Call → Result → Think ...
+   └──────┬─────────┘
+          │
+    ┌─────┴──────┐
+    ▼            ▼
+  ToolRegistry  Ask User
+  (MCP/Skill)     │
+    │              ▼
+    ▼         ┌─────────────┐
+  Execute     │ Brief & Audit│  ← NL summaries + execution logs
+              └─────────────┘
 ```
 
 ## 🛠️ Tech Stack
@@ -191,7 +200,8 @@ Signal Sources (GitHub / Email / Calendar / Screen / MCP / Skill)
 | Data | SQLite (default) / PostgreSQL + SQLAlchemy + Alembic |
 | Scheduling | APScheduler (event-driven first, polling as fallback) |
 | Execution Runtime | Celery + Redis |
-| Models | Any OpenAI-compatible API |
+| Agent Engine | LiteLLM + OpenAI Tool Calling (ReAct loop) |
+| Models | Any LLM via LiteLLM (DeepSeek / Claude / GPT / NVIDIA NIM / Moonshot etc.) |
 | Observability | structlog + OpenTelemetry + Prometheus |
 
 ## 📁 Project Structure

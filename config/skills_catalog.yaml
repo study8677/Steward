@@ -73,6 +73,27 @@ skills:
         hint: "默认 8 秒"
     install_note: "启动命令：steward-screen-sensor（需另开终端）"
 
+  - id: gog
+    name: GoG (Grounded Ops for GitHub)
+    description: 基于仓库事实的 GitHub 问题理解与回复编排能力
+    type: builtin
+    category: code
+    icon: 🧠
+
+  - id: self-improving-agent
+    name: Self-Improving Agent
+    description: 计划-执行-反思闭环，持续优化执行质量
+    type: builtin
+    category: productivity
+    icon: 🔁
+
+  - id: github-api-gateway
+    name: GitHub API Gateway
+    description: 通过认证 API 与 webhook 安全策略执行 issue/PR 操作
+    type: builtin
+    category: code
+    icon: 🛡️
+
   # ── MCP 数据源（需启动外部 MCP Server 进程） ────────
 
   - id: mcp-github

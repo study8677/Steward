@@ -94,6 +94,10 @@ class ActionRunnerService:
             if not isinstance(payload, dict):
                 payload = {}
 
+            # agent 类型步骤由 ExecutionAgent 自主处理，跳过 connector 校验
+            if connector_name == "agent":
+                continue
+
             is_valid, reason = self._connector_registry.validate_action(
                 connector=connector_name,
                 action_type=action_type,

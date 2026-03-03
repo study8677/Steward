@@ -19,6 +19,7 @@ from steward.services.context_space import ContextSpaceService
 from steward.services.dashboard import DashboardService
 from steward.services.decision_log import DecisionLogService
 from steward.services.event_ingest import EventIngestService
+from steward.services.execution_agent import ExecutionAgent
 from steward.services.integration_config import IntegrationConfigService
 from steward.services.memory_manager import MemoryManager
 from steward.services.model_gateway import ModelGateway
@@ -26,6 +27,7 @@ from steward.services.plan_control import PlanControlService
 from steward.services.planner import PlannerService
 from steward.services.policy_gate import PolicyGateService
 from steward.services.recorder_agent import RecorderAgent
+from steward.services.tool_registry import ToolRegistry
 from steward.services.verifier import VerifierService
 from steward.services.waiting import WaitingService
 
@@ -56,6 +58,8 @@ class ServiceContainer:
     integration_config_service: IntegrationConfigService
     memory_manager: MemoryManager
     recorder_agent: RecorderAgent
+    tool_registry: ToolRegistry
+    execution_agent: ExecutionAgent
 
 
 def build_service_container(settings: Settings) -> ServiceContainer:
@@ -113,6 +117,12 @@ def build_service_container(settings: Settings) -> ServiceContainer:
     memory_manager.ensure_structure()
     recorder_agent = RecorderAgent(memory_manager)
 
+    tool_registry = ToolRegistry(
+        integration_config=integration_config_service,
+        workspace_dir=".",
+    )
+    execution_agent = ExecutionAgent(tool_registry=tool_registry, settings=settings)
+
     return ServiceContainer(
         settings=settings,
         policy_loader=policy_loader,
@@ -136,4 +146,6 @@ def build_service_container(settings: Settings) -> ServiceContainer:
         integration_config_service=integration_config_service,
         memory_manager=memory_manager,
         recorder_agent=recorder_agent,
+        tool_registry=tool_registry,
+        execution_agent=execution_agent,
     )

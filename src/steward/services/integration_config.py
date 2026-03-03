@@ -1231,7 +1231,9 @@ class IntegrationConfigService:
         if codex_home:
             candidates.append(Path(codex_home) / "skills" / skill)
         candidates.append(Path.home() / ".codex" / "skills" / skill)
-        return any(path.exists() for path in candidates)
+        # Project-local skills are also treated as installable assets.
+        candidates.append(self._project_root() / "skills" / skill)
+        return any(path.exists() and (path / "SKILL.md").exists() for path in candidates)
 
     def _normalize_provider_name(self, raw: str) -> str:
         """标准化 provider/server/skill 名称。"""

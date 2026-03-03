@@ -192,89 +192,39 @@ class PlannerService:
         return PriorityLevel.P2
 
     async def _build_steps(self, event: ContextEvent, intent: str) -> list[dict[str, object]]:
-        """构建执行步骤。"""
-        if event.source == "github":
-            if await self._is_self_generated_github_comment(event):
-                return [
-                    {
-                        "connector": "manual",
-                        "action_type": "record_note",
-                        "payload": {
-                            "summary": "Skip self-generated GitHub comment event to avoid reply loop.",
-                            "intent": "observe",
-                        },
-                    }
-                ]
-            parsed = self._parse_github_ref(event.source_ref)
-            if parsed is None:
-                return []
-            owner, repo, issue_number = parsed
-            body = await self._build_github_issue_reply(
-                event=event,
-                intent=intent,
-                owner=owner,
-                repo=repo,
-                issue_number=issue_number,
-            )
-            return [
-                {
-                    "connector": "github",
-                    "action_type": "add_issue_comment",
-                    "payload": {
-                        "owner": owner,
-                        "repo": repo,
-                        "issue_number": issue_number,
-                        "body": body,
-                    },
-                }
-            ]
+        """构建执行步骤。
 
-        if event.source == "email":
-            return [
-                {
-                    "connector": "email",
-                    "action_type": "create_draft",
-                    "payload": {"subject": f"Re: {event.summary[:60]}", "intent": intent},
-                }
-            ]
-
-        if event.source == "chat":
-            return [
-                {
-                    "connector": "chat",
-                    "action_type": "reply_thread",
-                    "payload": {"text": f"Steward 跟进建议：{intent}", "intent": intent},
-                }
-            ]
-
-        if event.source == "calendar":
-            return [
-                {
-                    "connector": "calendar",
-                    "action_type": "update_event",
-                    "payload": {"title": f"Steward follow-up: {intent}"},
-                }
-            ]
-
-        if event.source == "screen":
-            return [
-                {
-                    "connector": "screen",
-                    "action_type": "collect_screen_signal",
-                    "payload": {"summary": event.summary, "intent": intent},
-                }
-            ]
-
-        if event.source in {"manual", "custom"}:
+        重构后：不再按 source 硬编码每种 connector 的动作，
+        而是生成一个统一的 agent_execute 步骤，由 ExecutionAgent 自主决策。
+        仅保留必要的安全检查（如自回复检测）。
+        """
+        # 安全检查：跳过自己生成的 GitHub 评论，防止回复死循环
+        if event.source == "github" and await self._is_self_generated_github_comment(event):
             return [
                 {
                     "connector": "manual",
                     "action_type": "record_note",
-                    "payload": {"summary": event.summary, "intent": intent},
+                    "payload": {
+                        "summary": "Skip self-generated GitHub comment event to avoid reply loop.",
+                        "intent": "observe",
+                    },
                 }
             ]
 
-        return []
+        # 核心：生成一个 agent_execute 步骤，委托给 ExecutionAgent 自主完成
+        return [
+            {
+                "connector": "agent",
+                "action_type": "agent_execute",
+                "payload": {
+                    "intent": intent,
+                    "event_summary": event.summary,
+                    "source": event.source,
+                    "source_ref": event.source_ref,
+                    "entities": event.entity_set,
+                },
+            }
+        ]
 
     async def _build_github_issue_reply(
         self,

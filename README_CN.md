@@ -37,15 +37,15 @@ Steward 就是你的数字管家——它静默感知邮件、GitHub、日历、
 ## 📸 Dashboard 预览
 
 <p align="center">
-  <img src="docs/images/dashboard_overview.png" width="100%" alt="Dashboard 概览 — KPI 卡片、待确认计划、冲突工单">
+  <img src="docs/screenshots/dashboard.png" width="100%" alt="Dashboard 概览 — KPI 卡片、待确认计划、冲突工单">
 </p>
 
 <p align="center">
-  <img src="docs/images/dashboard_connectors.png" width="100%" alt="连接器健康状态 & 自然语言输入">
+  <img src="docs/screenshots/integrations.png" width="100%" alt="连接器健康状态 & 自然语言输入">
 </p>
 
 <p align="center">
-  <img src="docs/images/dashboard_brief.png" width="100%" alt="LLM 驱动的自然语言简报 & 运行日志">
+  <img src="docs/screenshots/dashboard.png" width="100%" alt="LLM 驱动的自然语言简报 & 运行日志">
 </p>
 
 ## 🚀 快速开始
@@ -79,6 +79,11 @@ make start
 🚀 一切就绪！正在启动 Steward...
    Dashboard:  http://127.0.0.1:8000/dashboard
 ```
+
+快速开始现在也包含可选能力步骤：
+- 推荐启用 `GitHub Agent 能力包`：自动启用 GitHub MCP + 本机已安装 skills（`gh-address-comments`、`gh-fix-ci`、`playwright`、`gog`、`self-improving-agent`、`github-api-gateway`）。
+- 若某个 skill 本机未安装，向导会提示缺失项，可后续在 `/dashboard/integrations` 安装并启用。
+- 你也可以执行 `make install-skills`，将项目内 skills 链接到 Codex 技能目录。
 
 该模式适合本地体验 API/UI 和人工确认流程。
 
@@ -124,8 +129,10 @@ make run
   - Webhook 回调地址：`POST /api/v1/webhooks/providers/github`
   - 通过 `STEWARD_GITHUB_WEBHOOK_SECRET`（或 integrations API/NL）配置密钥
   - 在 GitHub Webhook 事件里勾选 `issues`、`issue_comment`、`pull_request`
+  - 对低风险 GitHub issue/comment，支持静默自动回复（无需人工确认，走 `plan -> gate(auto) -> worker execute`）
   - GitHub 自动回复已改为 agent 化：结合 issue 内容 + 本地仓库上下文生成中英双语回复
   - `issue_comment` 防循环：仅跳过 bot 自己发出的评论；用户评论仍可触发后续回复
+  - 当前状态：正在持续调优（回复质量与误触发控制）
 - 运行时持久化：`config/integrations.runtime.json`（`config`、`custom_providers`、`mcp_servers`、`skills`）。
 - 兼容说明：`/api/v1/skills` 仅作为兼容层，底层状态与 integrations 共用同一来源。
 
@@ -165,22 +172,28 @@ make run
           │
           ▼
    ┌─────────────┐
-   │  策略门禁    │  ← 风险评估、置信度、打扰预算
+   │  意图规划    │  ← LLM 意图推断 → 单一 agent_execute 步骤
    └──────┬──────┘
           │
           ▼
    ┌─────────────┐
-   │ 异步分发层   │  ← Celery + Redis
+   │  策略门禁    │  ← 风险评估、置信度、打扰预算
    └──────┬──────┘
           │
-     ┌────┴────┐
-     ▼         ▼
-  Worker 执行  请求确认
-     │         │
-     ▼         ▼
-   ┌─────────────┐
-   │  简报 & 审计 │  ← 自然语言总结 + 执行尝试日志
-   └─────────────┘
+          ▼
+   ┌────────────────┐
+   │ ExecutionAgent  │  ← LiteLLM acompletion() ReAct 循环
+   │  (Tool Calling) │     推理 → 工具调用 → 结果 → 再推理 ...
+   └──────┬─────────┘
+          │
+    ┌─────┴──────┐
+    ▼            ▼
+  ToolRegistry  请求确认
+  (MCP/Skill)     │
+    │              ▼
+    ▼         ┌─────────────┐
+  执行工具     │  简报 & 审计 │  ← 自然语言总结 + 执行日志
+              └─────────────┘
 ```
 
 ## 🛠️ 技术栈
@@ -192,7 +205,8 @@ make run
 | 数据层 | SQLite（默认）/ PostgreSQL + SQLAlchemy + Alembic |
 | 调度 | APScheduler（事件驱动优先，轮询兜底） |
 | 执行运行时 | Celery + Redis |
-| 模型 | OpenAI 兼容 API（任意供应商） |
+| Agent 引擎 | LiteLLM + OpenAI Tool Calling (ReAct 循环) |
+| 模型 | 通过 LiteLLM 接入任意 LLM (DeepSeek / Claude / GPT / NVIDIA NIM / Moonshot 等) |
 | 可观测性 | structlog + OpenTelemetry + Prometheus |
 
 ## 📁 项目结构

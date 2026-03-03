@@ -4,11 +4,14 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 UV := $(VENV)/bin/uv
 
-.PHONY: start bootstrap doctor lint test format run worker migrate upgrade downgrade
+.PHONY: start bootstrap doctor lint test format run worker migrate upgrade downgrade install-skills
 
 # 一键启动（新用户推荐入口）
 start:
 	@bash scripts/quickstart.sh
+
+install-skills:
+	@bash scripts/install_project_skills.sh
 
 bootstrap:
 	bash scripts/bootstrap_macos.sh

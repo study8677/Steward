@@ -67,161 +67,60 @@ async def _run_dispatch_async(dispatch_id: str) -> None:
             plan.state = PlanState.RUNNING.value
         await session.flush()
 
-        start_index = max(0, int(plan.current_step))
-        idx = start_index
-        while idx < len(plan.steps):
-            raw_step = plan.steps[idx]
+        # =====================================================================
+        # 唯一执行路径：ExecutionAgent（LiteLLM + Tool Calling ReAct Loop）
+        # =====================================================================
+        started = perf_counter()
+        try:
+            # 从 plan steps 中提取上下文信息
+            extra_context = ""
+            if plan.steps:
+                step0 = plan.steps[0] if isinstance(plan.steps[0], dict) else {}
+                payload = step0.get("payload", {})
+                if isinstance(payload, dict):
+                    event_summary = str(payload.get("event_summary", ""))
+                    source_ref = str(payload.get("source_ref", ""))
+                    source = str(payload.get("source", ""))
+                    extra_context = f"来源: {source}, 引用: {source_ref}" if source else ""
+                else:
+                    event_summary = ""
+            else:
+                event_summary = ""
 
-            if not isinstance(raw_step, dict):
-                plan.execution_status = "failed"
-                plan.last_error = f"step_{idx}_invalid"
-                if can_transition(PlanState(plan.state), PlanState.FAILED):
-                    plan.state = PlanState.FAILED.value
-                await attempt_store.mark_dispatch_finished(session, dispatch, status="failed")
-                await session.commit()
-                return
-
-            connector_name = str(raw_step.get("connector", "")).strip()
-            if not connector_name:
-                connector_name = "manual"
-            retryable = bool(raw_step.get("retryable", True))
-            idempotency_key = f"{dispatch.dispatch_id}:{idx}:r{dispatch.retry_count}"
-
-            plan.current_step = idx
-            await session.flush()
-
-            started = perf_counter()
-            try:
-                connector = services.connectors.get(connector_name)
-                result = await connector.execute(raw_step)
-                duration_ms = int((perf_counter() - started) * 1000)
-            except Exception as exc:  # noqa: BLE001
-                duration_ms = int((perf_counter() - started) * 1000)
-                await attempt_store.record_attempt(
-                    session,
-                    dispatch_id=dispatch.dispatch_id,
-                    plan_id=plan.plan_id,
-                    connector_instance_id=connector_name,
-                    step_index=idx,
-                    idempotency_key=idempotency_key,
-                    status="failed",
-                    detail=f"exception:{type(exc).__name__}",
-                    duration_ms=duration_ms,
-                    error_type=type(exc).__name__,
-                    error_message=str(exc)[:500],
-                    retryable=retryable,
-                )
-                if retryable and dispatch.retry_count < settings.execution_max_retries:
-                    await attempt_store.add_retry(session, dispatch)
-                    await session.commit()
-                    retry_step.apply_async(
-                        args=[dispatch.dispatch_id],
-                        countdown=settings.execution_retry_delay_seconds,
-                    )
-                    return
-
-                plan.execution_status = "failed"
-                plan.last_error = f"step_{idx}_exception:{type(exc).__name__}"
-                if can_transition(PlanState(plan.state), PlanState.FAILED):
-                    plan.state = PlanState.FAILED.value
-                await attempt_store.mark_dispatch_finished(session, dispatch, status="failed")
-                await services.decision_log_service.append(
-                    session,
-                    plan_id=plan.plan_id,
-                    gate_result=GateResult.AUTO,
-                    state_from=PlanState.RUNNING.value,
-                    state_to=plan.state,
-                    reason=plan.last_error,
-                    outcome=DecisionOutcome.FAILED,
-                )
-                await session.commit()
-                return
-
-            if not result.success:
-                await attempt_store.record_attempt(
-                    session,
-                    dispatch_id=dispatch.dispatch_id,
-                    plan_id=plan.plan_id,
-                    connector_instance_id=connector_name,
-                    step_index=idx,
-                    idempotency_key=idempotency_key,
-                    status="failed",
-                    detail=result.detail[:500],
-                    duration_ms=duration_ms,
-                    error_type="connector_error",
-                    error_message=result.detail[:500],
-                    retryable=retryable,
-                )
-                if retryable and dispatch.retry_count < settings.execution_max_retries:
-                    await attempt_store.add_retry(session, dispatch)
-                    await session.commit()
-                    retry_step.apply_async(
-                        args=[dispatch.dispatch_id],
-                        countdown=settings.execution_retry_delay_seconds,
-                    )
-                    return
-
-                plan.execution_status = "failed"
-                plan.last_error = f"step_{idx}_failed:{result.detail[:180]}"
-                if can_transition(PlanState(plan.state), PlanState.FAILED):
-                    plan.state = PlanState.FAILED.value
-                await attempt_store.mark_dispatch_finished(session, dispatch, status="failed")
-                await services.decision_log_service.append(
-                    session,
-                    plan_id=plan.plan_id,
-                    gate_result=GateResult.AUTO,
-                    state_from=PlanState.RUNNING.value,
-                    state_to=plan.state,
-                    reason=plan.last_error,
-                    outcome=DecisionOutcome.FAILED,
-                )
-                await session.commit()
-                return
-
-            reflection = {
-                "decision": "continue",
-                "summary": "本步骤已完成，继续执行后续步骤。",
-                "next_steps": [],
-            }
-            try:
-                reflection = await services.model_gateway.reflect_execution_step(
-                    plan_id=plan.plan_id,
-                    intent=intent,
-                    step_index=idx,
-                    step=raw_step,
-                    step_success=True,
-                    step_detail=result.detail,
-                    remaining_steps=max(0, len(plan.steps) - idx - 1),
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "execution_reflection_failed",
-                    plan_id=plan.plan_id,
-                    step_index=idx,
-                    error=str(exc),
-                )
-
-            reflection_summary = str(reflection.get("summary", "")).strip()[:180]
-            attempt_detail = result.detail[:350]
-            if reflection_summary:
-                attempt_detail = f"{attempt_detail} | reflection:{reflection_summary}"
-            await attempt_store.record_attempt(
-                session,
-                dispatch_id=dispatch.dispatch_id,
+            agent_result = await services.execution_agent.execute(
+                intent=intent,
+                event_summary=event_summary or f"Plan {plan.plan_id[:8]} — {intent}",
                 plan_id=plan.plan_id,
-                connector_instance_id=connector_name,
-                step_index=idx,
-                idempotency_key=idempotency_key,
-                status="succeeded",
-                detail=attempt_detail[:500],
-                duration_ms=duration_ms,
-                retryable=retryable,
+                extra_context=extra_context,
             )
+            duration_ms = int((perf_counter() - started) * 1000)
 
-            decision = str(reflection.get("decision", "continue")).strip().lower()
-            if decision == "halt":
+            if agent_result.success:
+                plan.current_step = len(plan.steps)
+                if can_transition(PlanState(plan.state), PlanState.SUCCEEDED):
+                    plan.state = PlanState.SUCCEEDED.value
+                plan.execution_status = "succeeded"
+                plan.last_error = None
+                await attempt_store.mark_dispatch_finished(session, dispatch, status="succeeded")
+                await services.decision_log_service.append(
+                    session,
+                    plan_id=plan.plan_id,
+                    gate_result=GateResult.AUTO,
+                    state_from=PlanState.RUNNING.value,
+                    state_to=plan.state,
+                    reason=f"agent_completed:{agent_result.summary[:120]}",
+                    outcome=DecisionOutcome.SUCCEEDED,
+                )
+                logger.info(
+                    "agent_execution_succeeded",
+                    plan_id=plan.plan_id,
+                    turns_used=agent_result.turns_used,
+                    duration_ms=duration_ms,
+                    summary=agent_result.summary[:100],
+                )
+            else:
                 plan.execution_status = "failed"
-                plan.last_error = f"reflection_halt:{reflection_summary[:140]}"
+                plan.last_error = f"agent_failed:{agent_result.summary[:200]}"
                 if can_transition(PlanState(plan.state), PlanState.FAILED):
                     plan.state = PlanState.FAILED.value
                 await attempt_store.mark_dispatch_finished(session, dispatch, status="failed")
@@ -234,96 +133,36 @@ async def _run_dispatch_async(dispatch_id: str) -> None:
                     reason=plan.last_error,
                     outcome=DecisionOutcome.FAILED,
                 )
-                await session.commit()
-                return
+                logger.warning(
+                    "agent_execution_failed",
+                    plan_id=plan.plan_id,
+                    duration_ms=duration_ms,
+                    error=agent_result.summary[:200],
+                )
 
-            if decision == "replan":
-                next_steps_raw = reflection.get("next_steps", [])
-                next_steps = next_steps_raw if isinstance(next_steps_raw, list) else []
-                valid_steps: list[dict[str, object]] = []
-                for next_step in next_steps:
-                    if not isinstance(next_step, dict):
-                        continue
-                    connector = str(next_step.get("connector", "")).strip().lower()
-                    action_type = str(next_step.get("action_type", "")).strip()
-                    payload_raw = next_step.get("payload", {})
-                    payload = payload_raw if isinstance(payload_raw, dict) else {}
-                    if not connector or not action_type:
-                        continue
-
-                    is_valid, reason = services.connectors.validate_action(
-                        connector=connector,
-                        action_type=action_type,
-                        payload=payload,
-                    )
-                    if not is_valid:
-                        plan.execution_status = "failed"
-                        plan.last_error = f"reflection_replan_invalid:{reason}"
-                        if can_transition(PlanState(plan.state), PlanState.FAILED):
-                            plan.state = PlanState.FAILED.value
-                        await attempt_store.mark_dispatch_finished(
-                            session, dispatch, status="failed"
-                        )
-                        await services.decision_log_service.append(
-                            session,
-                            plan_id=plan.plan_id,
-                            gate_result=GateResult.BLOCKED,
-                            state_from=PlanState.RUNNING.value,
-                            state_to=plan.state,
-                            reason=plan.last_error,
-                            outcome=DecisionOutcome.FAILED,
-                        )
-                        await session.commit()
-                        return
-                    valid_steps.append(next_step)
-
-                if valid_steps:
-                    plan.steps = list(plan.steps[: idx + 1]) + valid_steps
-                    await services.decision_log_service.append(
-                        session,
-                        plan_id=plan.plan_id,
-                        gate_result=GateResult.AUTO,
-                        state_from=PlanState.RUNNING.value,
-                        state_to=PlanState.RUNNING.value,
-                        reason=f"reflection_replan_step_{idx}:{reflection_summary[:80]}",
-                        outcome=DecisionOutcome.SUCCEEDED,
-                    )
-                    await session.flush()
-
-            idx += 1
-
-        plan.current_step = len(plan.steps)
-        if plan.wait_condition:
-            if can_transition(PlanState(plan.state), PlanState.WAITING):
-                plan.state = PlanState.WAITING.value
-            plan.execution_status = "waiting"
-            await attempt_store.mark_dispatch_finished(session, dispatch, status="waiting")
+        except Exception as exc:  # noqa: BLE001
+            duration_ms = int((perf_counter() - started) * 1000)
+            plan.execution_status = "failed"
+            plan.last_error = f"agent_exception:{type(exc).__name__}:{str(exc)[:200]}"
+            if can_transition(PlanState(plan.state), PlanState.FAILED):
+                plan.state = PlanState.FAILED.value
+            await attempt_store.mark_dispatch_finished(session, dispatch, status="failed")
             await services.decision_log_service.append(
                 session,
                 plan_id=plan.plan_id,
                 gate_result=GateResult.AUTO,
                 state_from=PlanState.RUNNING.value,
                 state_to=plan.state,
-                reason="async_execution_waiting",
-                outcome=DecisionOutcome.SUCCEEDED,
+                reason=plan.last_error,
+                outcome=DecisionOutcome.FAILED,
             )
-            await session.commit()
-            return
+            logger.error(
+                "agent_execution_exception",
+                plan_id=plan.plan_id,
+                duration_ms=duration_ms,
+                error=str(exc)[:200],
+            )
 
-        if can_transition(PlanState(plan.state), PlanState.SUCCEEDED):
-            plan.state = PlanState.SUCCEEDED.value
-        plan.execution_status = "succeeded"
-        plan.last_error = None
-        await attempt_store.mark_dispatch_finished(session, dispatch, status="succeeded")
-        await services.decision_log_service.append(
-            session,
-            plan_id=plan.plan_id,
-            gate_result=GateResult.AUTO,
-            state_from=PlanState.RUNNING.value,
-            state_to=plan.state,
-            reason="async_execution_completed",
-            outcome=DecisionOutcome.SUCCEEDED,
-        )
         await session.commit()
 
 

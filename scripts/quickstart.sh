@@ -129,7 +129,39 @@ info "数据库：使用 SQLite（零配置，数据存储在 steward.db）"
 info "如需切换到 Postgres，请设置环境变量 STEWARD_DATABASE_URL"
 ok "数据库准备就绪"
 
-# ─── 5. 启动服务 ───
+# ─── 5. 可选能力包（MCP + Skills） ───
+echo ""
+echo -e "${BOLD}🧩 可选：启用 GitHub Agent 能力包${NC}"
+echo "  包含：GitHub MCP、gh-address-comments、gh-fix-ci、playwright、gog、self-improving-agent、github-api-gateway（已安装项将自动启用）"
+read -rp "  是否现在启用？[Y/n]: " ENABLE_GH_BUNDLE
+ENABLE_GH_BUNDLE="${ENABLE_GH_BUNDLE:-Y}"
+
+if [[ "$ENABLE_GH_BUNDLE" =~ ^[Yy]$ ]]; then
+  info "启用 GitHub 能力包..."
+  BUNDLE_JSON="$(python scripts/quickstart_capabilities.py --bundle github || true)"
+  if [[ -n "$BUNDLE_JSON" ]]; then
+    SUMMARY_LINE="$(python - "$BUNDLE_JSON" <<'PY'
+import json, sys
+data = json.loads(sys.argv[1])
+enabled_mcp = ", ".join(data.get("enabled_mcp", []))
+enabled_skills = ", ".join(data.get("enabled_skills", []))
+missing_skills = ", ".join(data.get("missing_skills", []))
+print(f"{enabled_mcp}|{enabled_skills}|{missing_skills}")
+PY
+)"
+    IFS='|' read -r ENABLED_MCP ENABLED_SKILLS MISSING_SKILLS <<< "$SUMMARY_LINE"
+    [[ -n "$ENABLED_MCP" ]] && ok "已启用 MCP: $ENABLED_MCP"
+    [[ -n "$ENABLED_SKILLS" ]] && ok "已启用 Skills: $ENABLED_SKILLS"
+    if [[ -n "$MISSING_SKILLS" ]]; then
+      warn "以下 Skills 未在本机检测到，暂未启用: $MISSING_SKILLS"
+      warn "可在 Codex skills 目录安装后，到 Dashboard /integrations 再启用。"
+    fi
+  else
+    warn "能力包启用返回为空，已跳过。"
+  fi
+fi
+
+# ─── 6. 启动服务 ───
 echo ""
 echo -e "${BOLD}════════════════════════════════════════${NC}"
 echo -e "${GREEN}🚀 一切就绪！正在启动 Steward...${NC}"
