@@ -1,38 +1,36 @@
 ---
 name: gog
-description: Grounded Ops for GitHub (GoG). Build repository-grounded, low-risk issue responses and action plans.
+description: Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, and Docs.
+homepage: https://gogcli.sh
+metadata: {"clawdbot":{"emoji":"🎮","requires":{"bins":["gog"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/gogcli","bins":["gog"],"label":"Install gog (brew)"}]}}
 ---
 
-# GoG (Grounded Ops for GitHub)
+# gog
 
-Use this skill when handling GitHub issues/comments and you need grounded answers from the current repo.
+Use `gog` for Gmail/Calendar/Drive/Contacts/Sheets/Docs. Requires OAuth setup.
 
-## Workflow
+Setup (once)
+- `gog auth credentials /path/to/client_secret.json`
+- `gog auth add you@gmail.com --services gmail,calendar,drive,contacts,sheets,docs`
+- `gog auth list`
 
-1. Ground in repo context first.
-- Read `README.md`, `README_CN.md`, `agent.md`.
-- Search implementation evidence with `rg` before making claims.
+Common commands
+- Gmail search: `gog gmail search 'newer_than:7d' --max 10`
+- Gmail send: `gog gmail send --to a@b.com --subject "Hi" --body "Hello"`
+- Calendar: `gog calendar events <calendarId> --from <iso> --to <iso>`
+- Drive search: `gog drive search "query" --max 10`
+- Contacts: `gog contacts list --max 20`
+- Sheets get: `gog sheets get <sheetId> "Tab!A1:D10" --json`
+- Sheets update: `gog sheets update <sheetId> "Tab!A1:B2" --values-json '[["A","B"],["1","2"]]' --input USER_ENTERED`
+- Sheets append: `gog sheets append <sheetId> "Tab!A:C" --values-json '[["x","y","z"]]' --insert INSERT_ROWS`
+- Sheets clear: `gog sheets clear <sheetId> "Tab!A2:Z"`
+- Sheets metadata: `gog sheets metadata <sheetId> --json`
+- Docs export: `gog docs export <docId> --format txt --out /tmp/doc.txt`
+- Docs cat: `gog docs cat <docId>`
 
-2. Understand issue intent.
-- Extract: user question, expected outcome, risk level.
-- If low risk, prepare direct response; if medium/high risk, propose confirmation-first plan.
-
-3. Build answer with evidence.
-- Chinese + English concise response.
-- Include:
-  - what is already implemented
-  - what is missing / under tuning
-  - next concrete step
-
-4. Keep actions safe.
-- No destructive changes.
-- No secret disclosure.
-- Prefer read-only inspection unless explicitly asked to modify.
-
-## Output template
-
-- Understanding: ...
-- Current capability in repo: ...
-- Suggested next step: ...
-- (EN) Understanding / capability / next step: ...
-
+Notes
+- Set `GOG_ACCOUNT=you@gmail.com` to avoid repeating `--account`.
+- For scripting, prefer `--json` plus `--no-input`.
+- Sheets values can be passed via `--values-json` (recommended) or as inline rows.
+- Docs supports export/cat/copy. In-place edits require a Docs API client (not in gog).
+- Confirm before sending mail or creating events.
